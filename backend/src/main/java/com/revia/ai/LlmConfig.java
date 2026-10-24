@@ -38,12 +38,13 @@ public class LlmConfig {
         ReviaProperties.Ai ai = props.ai();
         String provider = ai.provider().trim().toLowerCase(Locale.ROOT);
         return switch (provider) {
-            case "openai" -> openAi(ai, "openai", "gpt-4o-mini", "", "", true);
+            case "openai" -> openAi(ai, "openai", "gpt-4o-mini", "", "", true, "");
             // Fournisseurs gratuits, tous compatibles avec l'API OpenAI (fiche « AI App Studio » : outils gratuits uniquement)
-            case "groq" -> openAi(ai, "groq", "llama-3.3-70b-versatile", "https://api.groq.com/openai", "", true);
+            case "groq" -> openAi(ai, "groq", "llama-3.3-70b-versatile", "https://api.groq.com/openai", "", true, "");
+            // Assistant : réflexion « minimal » (1er mot en ≈ 1 s au lieu de ≈ 6 s) ; la revue garde le réglage par défaut
             case "gemini" -> openAi(ai, "gemini", "gemini-flash-lite-latest",
-                    "https://generativelanguage.googleapis.com/v1beta/openai", "/chat/completions", true);
-            case "ollama" -> openAi(ai, "ollama", "qwen2.5-coder:1.5b", "http://localhost:11434", "", false);
+                    "https://generativelanguage.googleapis.com/v1beta/openai", "/chat/completions", true, "minimal");
+            case "ollama" -> openAi(ai, "ollama", "qwen2.5-coder:1.5b", "http://localhost:11434", "", false, "");
             case "anthropic", "claude" -> anthropic(ai);
             case "demo" -> {
                 log.warn("RevIA démarre en mode DEMO : analyse par règles statiques locales, aucun appel à un LLM.");
@@ -56,10 +57,11 @@ public class LlmConfig {
 
     /**
      * Tout fournisseur qui parle le protocole OpenAI (OpenAI, Groq, Gemini, Ollama).
-     * La réponse est demandée au format JSON (response_format = json_object).
+     * Pour la revue, la réponse est demandée au format JSON (response_format = json_object) ;
+     * l'assistant et les outils IA reçoivent du texte libre (Markdown).
      */
     private LlmClient openAi(ReviaProperties.Ai ai, String fournisseur, String modeleParDefaut, String urlParDefaut,
-            String cheminCompletions, boolean cleObligatoire) {
+            String cheminCompletions, boolean cleObligatoire, String reflexionAssistant) {
         String modele = ai.model().isBlank() ? modeleParDefaut : ai.model();
         String cle = ai.apiKey();
         if (cle.isBlank()) {
@@ -83,12 +85,16 @@ public class LlmConfig {
                         .model(modele)
                         .temperature(ai.temperature())
                         .maxTokens(ai.maxTokens())
-                        .responseFormat(ResponseFormat.builder().type(ResponseFormat.Type.JSON_OBJECT).build())
                         .build())
                 .retryTemplate(retry())
                 .build();
+        OpenAiChatOptions json = OpenAiChatOptions.builder()
+                .responseFormat(ResponseFormat.builder().type(ResponseFormat.Type.JSON_OBJECT).build())
+                .build();
         log.info("RevIA : fournisseur {}, modèle {}, température {}, délai {} s", fournisseur, modele, ai.temperature(), ai.timeoutSec());
-        return new SpringAiLlmClient(fournisseur, modele, model);
+        OpenAiChatOptions texte = reflexionAssistant.isBlank() ? null
+                : OpenAiChatOptions.builder().reasoningEffort(reflexionAssistant).build();
+        return new SpringAiLlmClient(fournisseur, modele, model, json, texte);
     }
 
     private LlmClient anthropic(ReviaProperties.Ai ai) {

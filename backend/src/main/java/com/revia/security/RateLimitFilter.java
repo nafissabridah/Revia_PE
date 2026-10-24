@@ -25,7 +25,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 /**
- * Limitation de débit (Bucket4j) : analyses par minute et par utilisateur,
+ * Limitation de débit (Bucket4j) : appels à l'IA (revues, assistant, outils) par minute et par utilisateur,
  * tentatives de connexion par minute et par adresse IP (anti force brute).
  * Le quota de 50 revues par jour est contrôlé séparément, en base, par QuotaService.
  */
@@ -47,7 +47,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
                                     @NonNull FilterChain chain) throws ServletException, IOException {
         Bucket bucket = null;
         String uri = req.getRequestURI();
-        if ("POST".equals(req.getMethod()) && uri.equals("/api/revues")) {
+        if ("POST".equals(req.getMethod()) && (uri.equals("/api/revues") || uri.startsWith("/api/assistant/"))) {
             Authentication a = SecurityContextHolder.getContext().getAuthentication();
             if (a != null && a.getPrincipal() instanceof UtilisateurConnecte u) {
                 bucket = analyses.get("u" + u.id(), () -> nouveau(quotas.analysesParMinute()));

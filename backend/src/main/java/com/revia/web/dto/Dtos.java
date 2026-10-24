@@ -4,10 +4,12 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -85,6 +87,29 @@ public final class Dtos {
     }
 
     public record PageDto<T>(List<T> contenu, int page, int taille, long total, int pages) {
+    }
+
+    // ---------- Assistant IA et outils IA
+    public record MessageChat(
+            @NotBlank @Pattern(regexp = "utilisateur|assistant", message = "Rôle inconnu.") String role,
+            @NotBlank(message = "Écrivez votre question.") @Size(max = 8_000, message = "Message limité à 8 000 caractères.") String contenu) {
+    }
+
+    public record ChatRequest(
+            @NotEmpty(message = "Écrivez votre question.") @Size(max = 40, message = "Conversation trop longue : recommencez-en une.")
+            List<@Valid MessageChat> messages,
+            @Size(max = 200_000) String code,
+            @Size(max = 20) String langage) {
+    }
+
+    public record OutilRequest(
+            @NotBlank(message = "Collez votre code.") @Size(max = 200_000, message = "Code trop long.") String code,
+            @Size(max = 20) String langage,
+            @Size(max = 30) String cible) {
+    }
+
+    public record AssistantReponse(String contenu, String outil, String langage, int nbMasquages, long dureeMs,
+                                   String fournisseur, String modele) {
     }
 
     // ---------- Administration

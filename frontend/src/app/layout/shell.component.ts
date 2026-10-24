@@ -25,6 +25,10 @@ import { IconeComponent } from '../shared/icone.component';
             <a routerLink="/historique" routerLinkActive="actif"><app-icone nom="historique" />Historique
               <span class="compteur">{{ auth.utilisateur()?.nbRevues ?? 0 }}</span></a>
             <a routerLink="/tableau-de-bord" routerLinkActive="actif"><app-icone nom="tableau" />Tableau de bord</a>
+            <div class="section">Assistant IA</div>
+            <a routerLink="/assistant" routerLinkActive="actif"><app-icone nom="chat" />Assistant IA<span class="nouveau">Gemini</span></a>
+            <a routerLink="/outils" routerLinkActive="actif"><app-icone nom="outils" />Outils IA</a>
+            <div class="section">Compte</div>
             <a routerLink="/parametres" routerLinkActive="actif"><app-icone nom="parametres" />Paramètres</a>
           }
           @if (auth.estAdmin()) {
@@ -83,6 +87,7 @@ import { IconeComponent } from '../shared/icone.component';
     }
     nav a:hover { background: var(--sidebar-2); }
     nav a.actif { background: var(--sidebar-2); color: #fff; box-shadow: inset 0 0 0 1px #2c3160; }
+    .nouveau { margin-left: auto; font-size: 10px; font-weight: 700; background: linear-gradient(135deg, #6d6af8, #4338ca); color: #fff; border-radius: 6px; padding: 1px 6px; }
     .compteur { margin-left: auto; font-size: 11px; background: #262b52; color: #b9bff0; border-radius: 6px; padding: 1px 7px; }
     .bas { margin-top: auto; display: flex; flex-direction: column; gap: 12px; }
     .quota { background: var(--sidebar-2); border: 1px solid #262b52; border-radius: 10px; padding: 12px; }

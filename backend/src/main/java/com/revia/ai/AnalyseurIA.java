@@ -10,6 +10,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Supplier;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -174,21 +175,29 @@ public class AnalyseurIA {
     }
 
     private String appeler(String systeme, String message) {
+        return executer(() -> llm.completer(systeme, message), executor, config.timeoutSec());
+    }
+
+    /**
+     * Exécute un appel au LLM avec un délai maximal et traduit les erreurs en messages clairs.
+     * Partagé par la revue et par l'assistant IA.
+     */
+    static String executer(Supplier<String> appel, ExecutorService executor, int timeoutSec) {
         CompletableFuture<String> futur;
         try {
-            futur = CompletableFuture.supplyAsync(() -> llm.completer(systeme, message), executor);
+            futur = CompletableFuture.supplyAsync(appel, executor);
         } catch (RejectedExecutionException e) {
             throw new ApiException(ErrorCode.LLM_QUOTA, ErrorCode.LLM_QUOTA.message(), e);
         }
         try {
-            String r = futur.get(config.timeoutSec(), TimeUnit.SECONDS);
+            String r = futur.get(timeoutSec, TimeUnit.SECONDS);
             if (r == null || r.isBlank()) {
                 throw new ApiException(ErrorCode.LLM_REPONSE_INVALIDE);
             }
             return r;
         } catch (TimeoutException e) {
             futur.cancel(true);
-            log.warn("Appel au LLM annulé après {} s", config.timeoutSec());
+            log.warn("Appel au LLM annulé après {} s", timeoutSec);
             throw new ApiException(ErrorCode.LLM_TIMEOUT, ErrorCode.LLM_TIMEOUT.message(), e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

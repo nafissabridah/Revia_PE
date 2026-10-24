@@ -132,6 +132,23 @@ export interface PromptSysteme {
   creeLe: string;
 }
 
+export type OutilIA = 'tests' | 'documentation' | 'explication' | 'commit' | 'refactoring' | 'conversion';
+
+export interface MessageChat {
+  role: 'utilisateur' | 'assistant';
+  contenu: string;
+}
+
+export interface AssistantReponse {
+  contenu: string;
+  outil: OutilIA | 'chat';
+  langage: string | null;
+  nbMasquages: number;
+  dureeMs: number;
+  fournisseur: string;
+  modele: string;
+}
+
 export interface ErreurApi {
   code: string;
   message: string;

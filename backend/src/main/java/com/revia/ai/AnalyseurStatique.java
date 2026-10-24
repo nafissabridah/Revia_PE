@@ -89,6 +89,12 @@ public class AnalyseurStatique implements LlmClient {
         }
     }
 
+    /** Assistant et outils IA en mode démo : réponses par gabarits, sans LLM (voir {@link AssistantDemo}). */
+    @Override
+    public String rediger(String promptSysteme, String messageUtilisateur) {
+        return AssistantDemo.repondre(promptSysteme, messageUtilisateur);
+    }
+
     private static String trouver(Pattern p, String texte, String defaut) {
         Matcher m = p.matcher(texte);
         return m.find() ? m.group(1).trim().toLowerCase(Locale.ROOT) : defaut;

@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../core/api.service';
 import { AuthService } from '../../core/auth.service';
+import { TransfertCodeService } from '../../core/transfert-code.service';
 import { messageErreur } from '../../core/http';
 import { CATEGORIES, EXTENSIONS, GRAVITES_PLURIEL, LANGAGES, MODES, libelleLangage } from '../../core/libelles';
 import { Categorie, Gravite, Probleme, RevueDetail } from '../../core/models';
@@ -69,6 +70,10 @@ type Filtre = 'tous' | Categorie;
             }
           } @else {
             <span>Collez votre code puis lancez la revue</span>
+          }
+          @if (code().trim()) {
+            <button class="lien-ia" type="button" (click)="ouvrir('outils')" title="Tests, documentation, explication…">🧪 Outils IA</button>
+            <button class="lien-ia" type="button" (click)="ouvrir('assistant')">💬 Demander à l'assistant</button>
           }
           <span class="pos">Ln {{ curseur().ligne }}, Col {{ curseur().colonne }}</span>
         </div>
@@ -191,6 +196,8 @@ type Filtre = 'tous' | Categorie;
     .zone { flex: 1; min-height: 0; }
     .pied { display: flex; gap: 14px; align-items: center; padding: 8px 12px; border-top: 1px solid #1f2444; color: #7d84ad; font-size: 11.5px; }
     .pos { margin-left: auto; }
+    .lien-ia { background: #1b1f3d; border: 1px solid #262b52; color: #c9cdf0; border-radius: 6px; padding: 2px 8px; font: 11.5px var(--police); cursor: pointer; }
+    .lien-ia:hover { border-color: var(--primaire); color: #fff; }
     .cpt { display: inline-flex; align-items: center; gap: 5px; }
     .cpt i { width: 7px; height: 7px; border-radius: 50%; }
     .c-critique i { background: #ef4444; } .c-majeure i { background: #f97316; } .c-mineure i { background: #eab308; } .c-info i { background: #60a5fa; }
@@ -247,6 +254,7 @@ export class RevueComponent implements OnDestroy {
   private readonly api = inject(ApiService);
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
+  private readonly transfert = inject(TransfertCodeService);
 
   /** Paramètre de route /revues/:id (absent pour /revues/nouvelle). */
   readonly id = input<string | undefined>(undefined);
@@ -369,6 +377,12 @@ export class RevueComponent implements OnDestroy {
       }
       this.sauverBrouillon();
     });
+  }
+
+  /** Envoie le code de l'éditeur vers l'assistant ou les outils IA. */
+  ouvrir(page: 'assistant' | 'outils'): void {
+    this.transfert.deposer(this.code(), this.langage());
+    this.router.navigate(['/' + page]);
   }
 
   exemple(): void {
