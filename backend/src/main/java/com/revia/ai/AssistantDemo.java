@@ -37,6 +37,9 @@ final class AssistantDemo {
         List<String> fonctions = fonctions(code);
         String liste = fonctions.isEmpty() ? "- (aucune fonction détectée)"
                 : String.join("\n", fonctions.stream().map(f -> "- `" + f + "`").toList());
+        if (outil.startsWith("compactage")) {
+            return compactage(message);
+        }
         String corps = switch (outil) {
             case "génération de tests" -> tests(langage, fonctions);
             case "documentation automatique" -> "## Documentation\n\nFonctions et méthodes à documenter :\n" + liste
@@ -55,6 +58,32 @@ final class AssistantDemo {
                     + "ou générer des tests. Posez votre question et joignez votre code si besoin.";
         };
         return corps + AVERTISSEMENT;
+    }
+
+    /** Résumé par gabarit : questions posées et début de la dernière réponse (un vrai LLM rédige un résumé intelligent). */
+    private static String compactage(String message) {
+        List<String> questions = new ArrayList<>();
+        String derniereReponse = "";
+        for (String ligne : message.split("\n")) {
+            if (ligne.startsWith("Utilisateur : ")) {
+                questions.add(coupe(ligne.substring(14), 140));
+            } else if (ligne.startsWith("Assistant : ")) {
+                derniereReponse = coupe(ligne.substring(12), 200);
+            }
+        }
+        StringBuilder sb = new StringBuilder("### Résumé de la conversation\n\n**Questions de l'utilisateur**\n");
+        for (String q : questions) {
+            sb.append("- ").append(q).append('\n');
+        }
+        if (!derniereReponse.isBlank()) {
+            sb.append("\n**Dernière réponse de l'assistant** : ").append(derniereReponse).append('\n');
+        }
+        return sb.append("\n_(Résumé généré en mode démo ; avec Gemini, il est rédigé par l'IA.)_").toString();
+    }
+
+    private static String coupe(String texte, int max) {
+        String t = texte.strip().replaceAll("\\s+", " ");
+        return t.length() <= max ? t : t.substring(0, max - 1) + "…";
     }
 
     private static String tests(String langage, List<String> fonctions) {

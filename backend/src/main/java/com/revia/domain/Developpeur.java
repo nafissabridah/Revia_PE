@@ -13,9 +13,16 @@ public class Developpeur extends Utilisateur {
     @Column(name = "quota_journalier", nullable = false)
     private int quotaJournalier = 50;
 
+    @Column(name = "quota_assistant", nullable = false)
+    private int quotaAssistant = 100;
+
     /** Calculé à la volée (nombre de revues créées aujourd'hui), jamais stocké. */
     @Transient
     private int revuesDuJour;
+
+    /** Calculé à la volée (requêtes assistant / outils IA d'aujourd'hui), jamais stocké. */
+    @Transient
+    private int assistantDuJour;
 
     protected Developpeur() {
     }
@@ -38,6 +45,27 @@ public class Developpeur extends Utilisateur {
     /** Vrai si le développeur a déjà consommé toutes ses revues du jour. */
     public boolean quotaAtteint() {
         return revuesDuJour >= quotaJournalier;
+    }
+
+    /** Vrai si le développeur a déjà consommé toutes ses requêtes assistant / outils du jour. */
+    public boolean assistantAtteint() {
+        return assistantDuJour >= quotaAssistant;
+    }
+
+    public int getQuotaAssistant() {
+        return quotaAssistant;
+    }
+
+    public void setQuotaAssistant(int quotaAssistant) {
+        this.quotaAssistant = quotaAssistant;
+    }
+
+    public int getAssistantDuJour() {
+        return assistantDuJour;
+    }
+
+    public void setAssistantDuJour(int assistantDuJour) {
+        this.assistantDuJour = assistantDuJour;
     }
 
     public int getQuotaJournalier() {

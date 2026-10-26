@@ -46,17 +46,22 @@ public class RateLimitFilter extends OncePerRequestFilter {
     protected void doFilterInternal(@NonNull HttpServletRequest req, @NonNull HttpServletResponse res,
                                     @NonNull FilterChain chain) throws ServletException, IOException {
         Bucket bucket = null;
+        int limite = 0;
         String uri = req.getRequestURI();
         if ("POST".equals(req.getMethod()) && (uri.equals("/api/revues") || uri.startsWith("/api/assistant/"))) {
             Authentication a = SecurityContextHolder.getContext().getAuthentication();
             if (a != null && a.getPrincipal() instanceof UtilisateurConnecte u) {
+                limite = Math.max(1, quotas.analysesParMinute());
                 bucket = analyses.get("u" + u.id(), () -> nouveau(quotas.analysesParMinute()));
             }
         } else if ("POST".equals(req.getMethod()) && (uri.equals("/api/auth/login") || uri.equals("/api/auth/register"))) {
+            limite = Math.max(1, quotas.connexionsParMinute());
             bucket = connexions.get("ip" + req.getRemoteAddr(), () -> nouveau(quotas.connexionsParMinute()));
         }
         if (bucket != null) {
             ConsumptionProbe p = bucket.tryConsumeAndReturnRemaining(1);
+            res.setHeader("X-RateLimit-Limit", String.valueOf(limite));
+            res.setHeader("X-RateLimit-Remaining", String.valueOf(p.getRemainingTokens()));
             if (!p.isConsumed()) {
                 long attente = Math.max(1, TimeUnit.NANOSECONDS.toSeconds(p.getNanosToWaitForRefill()));
                 res.setStatus(ErrorCode.DEBIT_LIMITE.status().value());

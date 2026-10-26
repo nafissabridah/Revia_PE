@@ -28,6 +28,7 @@ import { IconeComponent } from '../shared/icone.component';
             <div class="section">Assistant IA</div>
             <a routerLink="/assistant" routerLinkActive="actif"><app-icone nom="chat" />Assistant IA<span class="nouveau">Gemini</span></a>
             <a routerLink="/outils" routerLinkActive="actif"><app-icone nom="outils" />Outils IA</a>
+            <a routerLink="/prompts" routerLinkActive="actif"><app-icone nom="prompt" />Mes prompts</a>
             <div class="section">Compte</div>
             <a routerLink="/parametres" routerLinkActive="actif"><app-icone nom="parametres" />Paramètres</a>
           }
@@ -44,6 +45,8 @@ import { IconeComponent } from '../shared/icone.component';
               <div class="q-titre">Quota du jour</div>
               <div class="jauge"><span [style.width.%]="pourcentage()"></span></div>
               <div class="q-texte">{{ auth.utilisateur()?.revuesDuJour ?? 0 }} / {{ auth.utilisateur()?.quotaJournalier ?? 0 }} revues · réinitialisé à minuit</div>
+              <div class="jauge assistant" [class.plein]="pourcentageAssistant() >= 100"><span [style.width.%]="pourcentageAssistant()"></span></div>
+              <div class="q-texte">{{ auth.utilisateur()?.assistantDuJour ?? 0 }} / {{ auth.utilisateur()?.quotaAssistant ?? 0 }} requêtes assistant</div>
             </div>
           }
           <div class="profil">
@@ -94,7 +97,8 @@ import { IconeComponent } from '../shared/icone.component';
     .q-titre { color: #fff; font-weight: 600; font-size: 12.5px; margin-bottom: 8px; }
     .jauge { height: 5px; background: #2a2f58; border-radius: 4px; overflow: hidden; }
     .jauge span { display: block; height: 100%; background: linear-gradient(90deg, #6d6af8, #a5b4fc); border-radius: 4px; transition: width .4s; }
-    .plein .jauge span { background: var(--critique); }
+    .plein .jauge span, .jauge.plein span { background: var(--critique); }
+    .jauge.assistant { margin-top: 10px; }
     .q-texte { font-size: 11.5px; color: #9aa0c8; margin-top: 7px; }
     .profil { display: flex; align-items: center; gap: 10px; padding: 4px; }
     .avatar {
@@ -130,6 +134,12 @@ export class ShellComponent implements OnInit {
     const u = this.auth.utilisateur();
     if (!u?.quotaJournalier) return 0;
     return Math.min(100, Math.round(((u.revuesDuJour ?? 0) / u.quotaJournalier) * 100));
+  });
+
+  readonly pourcentageAssistant = computed(() => {
+    const u = this.auth.utilisateur();
+    if (!u?.quotaAssistant) return 0;
+    return Math.min(100, Math.round(((u.assistantDuJour ?? 0) / u.quotaAssistant) * 100));
   });
 
   ngOnInit(): void {

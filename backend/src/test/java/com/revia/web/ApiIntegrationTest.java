@@ -203,6 +203,252 @@ class ApiIntegrationTest {
     }
 
     @Test
+    @DisplayName("Admin : créer, modifier et supprimer un utilisateur (avec ses revues) ; garde-fous")
+    void crudUtilisateurs() throws Exception {
+        String adm = admin();
+        String email = "crud-" + UUID.randomUUID() + "@revia.test";
+        String creation = json.writeValueAsString(Map.of("nom", "Compte Crud", "email", email, "motDePasse", "Motdepasse1",
+                "role", "DEVELOPPEUR", "quota", 7));
+
+        // Création : 201, rôle et quota respectés
+        String rep = mvc.perform(post("/api/admin/utilisateurs").header("Authorization", "Bearer " + adm)
+                        .contentType(MediaType.APPLICATION_JSON).content(creation))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.role").value("DEVELOPPEUR"))
+                .andExpect(jsonPath("$.quotaJournalier").value(7)).andReturn().getResponse().getContentAsString();
+        long id = json.readTree(rep).get("id").asLong();
+
+        // E-mail déjà utilisé : 409 ; mot de passe trop faible : 400 ; non-admin : 403
+        mvc.perform(post("/api/admin/utilisateurs").header("Authorization", "Bearer " + adm)
+                        .contentType(MediaType.APPLICATION_JSON).content(creation))
+                .andExpect(status().isConflict());
+        mvc.perform(post("/api/admin/utilisateurs").header("Authorization", "Bearer " + adm).contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("nom", "Faible", "email", "faible-" + UUID.randomUUID() + "@revia.test",
+                                "motDePasse", "abc", "role", "DEVELOPPEUR"))))
+                .andExpect(status().isBadRequest());
+        mvc.perform(post("/api/admin/utilisateurs").header("Authorization", "Bearer " + inscrire())
+                        .contentType(MediaType.APPLICATION_JSON).content(creation))
+                .andExpect(status().isForbidden());
+
+        // Le compte créé peut se connecter
+        String login = mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("email", email, "motDePasse", "Motdepasse1"))))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String token = json.readTree(login).get("token").asText();
+        soumettre(token, "int a = 1;");
+
+        // Modification : nom, e-mail, mot de passe et quota
+        String nouvelEmail = "modifie-" + UUID.randomUUID() + "@revia.test";
+        mvc.perform(put("/api/admin/utilisateurs/" + id).header("Authorization", "Bearer " + adm)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("nom", "Nom Modifié", "email", nouvelEmail,
+                                "motDePasse", "Nouveau2026", "quota", 12))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.nom").value("Nom Modifié"))
+                .andExpect(jsonPath("$.email").value(nouvelEmail)).andExpect(jsonPath("$.quotaJournalier").value(12));
+        mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("email", email, "motDePasse", "Motdepasse1"))))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("email", nouvelEmail, "motDePasse", "Nouveau2026"))))
+                .andExpect(status().isOk());
+
+        // Suppression : 204, jeton refusé ensuite, compte introuvable, auto-suppression interdite
+        mvc.perform(delete("/api/admin/utilisateurs/" + id).header("Authorization", "Bearer " + adm))
+                .andExpect(status().isNoContent());
+        mvc.perform(get("/api/me").header("Authorization", "Bearer " + token)).andExpect(status().isUnauthorized());
+        mvc.perform(delete("/api/admin/utilisateurs/" + id).header("Authorization", "Bearer " + adm))
+                .andExpect(status().isNotFound());
+        long adminId = json.readTree(mvc.perform(get("/api/me").header("Authorization", "Bearer " + adm))
+                .andReturn().getResponse().getContentAsString()).get("id").asLong();
+        mvc.perform(delete("/api/admin/utilisateurs/" + adminId).header("Authorization", "Bearer " + adm))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Vous ne pouvez pas supprimer votre propre compte."));
+    }
+
+    @Test
+    @DisplayName("Quota assistant (429), quotas par défaut, changement de rôle et réinitialisation du mot de passe")
+    void quotasAssistantRolesEtReinitialisation() throws Exception {
+        String adm = admin();
+        String dev = inscrire();
+        long devId = json.readTree(mvc.perform(get("/api/me").header("Authorization", "Bearer " + dev))
+                .andReturn().getResponse().getContentAsString()).get("id").asLong();
+        String chat = "{\"messages\":[{\"role\":\"utilisateur\",\"contenu\":\"Bonjour\"}]}";
+
+        // Quota assistant de 1 : la 2e requête est refusée avant tout appel au LLM ; l'administrateur n'est pas limité
+        mvc.perform(put("/api/admin/utilisateurs/" + devId + "/quota").header("Authorization", "Bearer " + adm)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"quota\":50,\"quotaAssistant\":1}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.quotaAssistant").value(1));
+        mvc.perform(post("/api/assistant/chat").header("Authorization", "Bearer " + dev)
+                        .contentType(MediaType.APPLICATION_JSON).content(chat))
+                .andExpect(status().isOk());
+        mvc.perform(post("/api/assistant/chat").header("Authorization", "Bearer " + dev)
+                        .contentType(MediaType.APPLICATION_JSON).content(chat))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.message").value("Vous avez atteint vos 1 requêtes assistant du jour."));
+        mvc.perform(get("/api/me").header("Authorization", "Bearer " + dev))
+                .andExpect(jsonPath("$.assistantDuJour").value(1));
+        mvc.perform(post("/api/assistant/chat").header("Authorization", "Bearer " + adm)
+                        .contentType(MediaType.APPLICATION_JSON).content(chat))
+                .andExpect(status().isOk());
+
+        // Quotas par défaut appliqués à tous les développeurs, puis rétablis
+        mvc.perform(put("/api/admin/parametres/quotas").header("Authorization", "Bearer " + adm)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"quotaRevuesDefaut\":20,\"quotaAssistantDefaut\":30,\"appliquerATous\":true}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.quotaRevuesDefaut").value(20));
+        mvc.perform(get("/api/me").header("Authorization", "Bearer " + dev))
+                .andExpect(jsonPath("$.quotaJournalier").value(20)).andExpect(jsonPath("$.quotaAssistant").value(30));
+        mvc.perform(get("/api/systeme/info")).andExpect(jsonPath("$.quotaParDefaut").value(20))
+                .andExpect(jsonPath("$.quotaAssistantParDefaut").value(30));
+        mvc.perform(put("/api/admin/parametres/quotas").header("Authorization", "Bearer " + adm)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"quotaRevuesDefaut\":50,\"quotaAssistantDefaut\":100,\"appliquerATous\":true}"))
+                .andExpect(status().isOk());
+
+        // Changement de rôle : promotion, accès admin immédiat, rétrogradation ; pas sur son propre compte
+        String email = "role-" + UUID.randomUUID() + "@revia.test";
+        long id = json.readTree(mvc.perform(post("/api/admin/utilisateurs").header("Authorization", "Bearer " + adm)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("nom", "Compte Rôle", "email", email, "motDePasse", "Motdepasse1",
+                                "role", "DEVELOPPEUR"))))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).get("id").asLong();
+        String token = json.readTree(mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("email", email, "motDePasse", "Motdepasse1"))))
+                .andReturn().getResponse().getContentAsString()).get("token").asText();
+        mvc.perform(get("/api/admin/utilisateurs").header("Authorization", "Bearer " + token)).andExpect(status().isForbidden());
+        mvc.perform(put("/api/admin/utilisateurs/" + id + "/role").header("Authorization", "Bearer " + adm)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"role\":\"ADMIN\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.role").value("ADMIN"));
+        mvc.perform(get("/api/admin/utilisateurs").header("Authorization", "Bearer " + token)).andExpect(status().isOk());
+        mvc.perform(put("/api/admin/utilisateurs/" + id + "/role").header("Authorization", "Bearer " + adm)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"role\":\"DEVELOPPEUR\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.role").value("DEVELOPPEUR"))
+                .andExpect(jsonPath("$.quotaJournalier").value(50));
+        mvc.perform(get("/api/admin/utilisateurs").header("Authorization", "Bearer " + token)).andExpect(status().isForbidden());
+        long adminId = json.readTree(mvc.perform(get("/api/me").header("Authorization", "Bearer " + adm))
+                .andReturn().getResponse().getContentAsString()).get("id").asLong();
+        mvc.perform(put("/api/admin/utilisateurs/" + adminId + "/role").header("Authorization", "Bearer " + adm)
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"role\":\"DEVELOPPEUR\"}"))
+                .andExpect(status().isBadRequest());
+
+        // Réinitialisation : mot de passe temporaire valide, ancien mot de passe refusé ; réservé à l'admin
+        mvc.perform(post("/api/admin/utilisateurs/" + id + "/reinitialisation-mot-de-passe").header("Authorization", "Bearer " + dev))
+                .andExpect(status().isForbidden());
+        String temporaire = json.readTree(mvc.perform(post("/api/admin/utilisateurs/" + id + "/reinitialisation-mot-de-passe")
+                        .header("Authorization", "Bearer " + adm))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString()).get("motDePasse").asText();
+        assertThat(temporaire).hasSize(12).matches("^(?=.*[A-Za-z])(?=.*\\d).+$");
+        mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("email", email, "motDePasse", "Motdepasse1"))))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("email", email, "motDePasse", temporaire))))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("Mes prompts : créer, lister, modifier, supprimer ; privés à leur auteur")
+    void mesPrompts() throws Exception {
+        String a = inscrire();
+        String b = inscrire();
+        String corps = json.writeValueAsString(Map.of("titre", "Explique en simple", "contenu", "Explique ce code à un débutant."));
+        long id = json.readTree(mvc.perform(post("/api/mes-prompts").header("Authorization", "Bearer " + a)
+                        .contentType(MediaType.APPLICATION_JSON).content(corps))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.titre").value("Explique en simple"))
+                .andReturn().getResponse().getContentAsString()).get("id").asLong();
+        mvc.perform(post("/api/mes-prompts").header("Authorization", "Bearer " + a).contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("titre", "Avantages", "contenu", "Liste les points forts et faibles."))))
+                .andExpect(status().isCreated());
+
+        // Liste triée par titre, limitée à l'auteur
+        mvc.perform(get("/api/mes-prompts").header("Authorization", "Bearer " + a))
+                .andExpect(status().isOk()).andExpect(jsonPath("$", hasSize(2))).andExpect(jsonPath("$[0].titre").value("Avantages"));
+        mvc.perform(get("/api/mes-prompts").header("Authorization", "Bearer " + b))
+                .andExpect(status().isOk()).andExpect(jsonPath("$", hasSize(0)));
+
+        // Un autre utilisateur ne peut ni modifier ni supprimer (404) ; titre vide : 400 ; sans jeton : 401
+        mvc.perform(put("/api/mes-prompts/" + id).header("Authorization", "Bearer " + b)
+                        .contentType(MediaType.APPLICATION_JSON).content(corps))
+                .andExpect(status().isNotFound());
+        mvc.perform(delete("/api/mes-prompts/" + id).header("Authorization", "Bearer " + b)).andExpect(status().isNotFound());
+        mvc.perform(post("/api/mes-prompts").header("Authorization", "Bearer " + a).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"titre\":\" \",\"contenu\":\"x\"}"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/mes-prompts")).andExpect(status().isUnauthorized());
+
+        // Modification puis suppression par l'auteur
+        mvc.perform(put("/api/mes-prompts/" + id).header("Authorization", "Bearer " + a).contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("titre", "Explique", "contenu", "Explique ligne par ligne."))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.contenu").value("Explique ligne par ligne."));
+        mvc.perform(delete("/api/mes-prompts/" + id).header("Authorization", "Bearer " + a)).andExpect(status().isNoContent());
+        mvc.perform(get("/api/mes-prompts").header("Authorization", "Bearer " + a)).andExpect(jsonPath("$", hasSize(1)));
+    }
+
+    @Test
+    @DisplayName("Prompts partagés par l'admin, dernière connexion et en-têtes Bucket4j")
+    void promptsPartagesConnexionEtDebit() throws Exception {
+        String adm = admin();
+        String dev = inscrire();
+        String corps = json.writeValueAsString(Map.of("titre", "Revue sécurité OWASP", "contenu", "Passe ce code en revue selon l'OWASP Top 10."));
+
+        // Création par l'admin ; visible de tout développeur mais non modifiable par lui ; refusée à un développeur
+        long id = json.readTree(mvc.perform(post("/api/admin/prompts-partages").header("Authorization", "Bearer " + adm)
+                        .contentType(MediaType.APPLICATION_JSON).content(corps))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.partage").value(true))
+                .andReturn().getResponse().getContentAsString()).get("id").asLong();
+        mvc.perform(post("/api/admin/prompts-partages").header("Authorization", "Bearer " + dev)
+                        .contentType(MediaType.APPLICATION_JSON).content(corps))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/mes-prompts").header("Authorization", "Bearer " + dev))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].titre").value("Revue sécurité OWASP"))
+                .andExpect(jsonPath("$[0].partage").value(true)).andExpect(jsonPath("$[0].modifiable").value(false));
+        mvc.perform(put("/api/mes-prompts/" + id).header("Authorization", "Bearer " + dev)
+                        .contentType(MediaType.APPLICATION_JSON).content(corps))
+                .andExpect(status().isNotFound());
+        mvc.perform(delete("/api/mes-prompts/" + id).header("Authorization", "Bearer " + dev)).andExpect(status().isNotFound());
+        mvc.perform(put("/api/admin/prompts-partages/" + id).header("Authorization", "Bearer " + adm)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("titre", "Revue OWASP", "contenu", "Version 2."))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.titre").value("Revue OWASP"));
+        mvc.perform(delete("/api/admin/prompts-partages/" + id).header("Authorization", "Bearer " + adm)).andExpect(status().isNoContent());
+        mvc.perform(get("/api/mes-prompts").header("Authorization", "Bearer " + dev)).andExpect(jsonPath("$", hasSize(0)));
+
+        // Dernière connexion renseignée à la connexion ; en-têtes de limitation de débit et limites publiées
+        String email = "connexion-" + UUID.randomUUID() + "@revia.test";
+        mvc.perform(post("/api/admin/utilisateurs").header("Authorization", "Bearer " + adm).contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("nom", "Compte Connexion", "email", email, "motDePasse", "Motdepasse1", "role", "DEVELOPPEUR"))))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.derniereConnexion").doesNotExist());
+        String rep = mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("email", email, "motDePasse", "Motdepasse1"))))
+                .andExpect(status().isOk()).andExpect(header().exists("X-RateLimit-Limit")).andExpect(header().exists("X-RateLimit-Remaining"))
+                .andReturn().getResponse().getContentAsString();
+        String token = json.readTree(rep).get("token").asText();
+        mvc.perform(get("/api/me").header("Authorization", "Bearer " + token)).andExpect(jsonPath("$.derniereConnexion").isNotEmpty());
+        mvc.perform(get("/api/systeme/info")).andExpect(jsonPath("$.analysesParMinute").isNumber())
+                .andExpect(jsonPath("$.connexionsParMinute").isNumber());
+    }
+
+    @Test
+    @DisplayName("Compactage de la conversation : résumé, minimum deux messages, budget de contexte publié")
+    void compactage() throws Exception {
+        String dev = inscrire();
+        String conversation = json.writeValueAsString(Map.of("messages", java.util.List.of(
+                Map.of("role", "utilisateur", "contenu", "Comment éviter une injection SQL en Java ?"),
+                Map.of("role", "assistant", "contenu", "Utilisez une requête paramétrée avec PreparedStatement."),
+                Map.of("role", "utilisateur", "contenu", "Et pour un mot de passe = \"admin123\" dans le code ?"))));
+        mvc.perform(post("/api/assistant/compacter").header("Authorization", "Bearer " + dev)
+                        .contentType(MediaType.APPLICATION_JSON).content(conversation))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.outil").value("compactage"))
+                .andExpect(jsonPath("$.contenu").value(containsString("injection SQL")));
+        mvc.perform(post("/api/assistant/compacter").header("Authorization", "Bearer " + dev)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"messages\":[{\"role\":\"utilisateur\",\"contenu\":\"Bonjour\"}]}"))
+                .andExpect(status().isBadRequest());
+        mvc.perform(post("/api/assistant/compacter").contentType(MediaType.APPLICATION_JSON).content(conversation))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/systeme/info")).andExpect(jsonPath("$.contexteMaxTokens").value(12000));
+    }
+
+    @Test
     @DisplayName("Informations système publiques sans la clé d'API ; santé de l'application")
     void systeme() throws Exception {
         mvc.perform(get("/api/systeme/info")).andExpect(status().isOk())

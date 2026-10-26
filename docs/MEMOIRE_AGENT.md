@@ -87,7 +87,7 @@ Une mémoire est un instantané : **vérifier dans le code avant d'agir** (fichi
 - Le prompt 44 demandait un transfert outils/chat → revue ; le code fait revue → assistant/outils.
 - `SpaController` ne forwardait pas `/assistant` ni `/outils` (404 sur F5 en mode JAR) : vérifier l'état actuel du fichier avant d'agir.
 - Le README annonce 42 tests backend ; le total réel est de 54 avec l'assistant.
-- **Comment l'appliquer :** consulter le §28 et le §31.2 de `PROMPT_AGENT_IA_DETAILLE.md`.
+- **Comment l'appliquer :** consulter le §28 de `PROMPT_AGENT_IA_DETAILLE.md` et le bloc « Prompts de construction » du §10.
 
 ## reference — Où trouver quoi
 
@@ -97,7 +97,7 @@ Une mémoire est un instantané : **vérifier dans le code avant d'agir** (fichi
 | Manuel technique complet | `README.md` |
 | Prompt agent détaillé (28 sections + historique) | `docs/PROMPT_AGENT_IA_DETAILLE.md` |
 | Règles courtes pour agents | `docs/REGLES_AGENT.md` |
-| Serveurs MCP envisagés | `docs/MCP_POTENTIELS.md` |
+| Serveurs MCP envisagés | `docs/MCP.md` |
 | 44 prompts de construction (verbatim) | `docs/historique-prompts.md` |
 | Benchmark Gemini | `docs/rapport-jeu-essai-gemini.md` |
 | Captures d'écran de référence | `docs/captures/` |

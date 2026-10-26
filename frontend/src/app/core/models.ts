@@ -12,9 +12,12 @@ export interface Utilisateur {
   role: 'DEVELOPPEUR' | 'ADMIN';
   quotaJournalier: number | null;
   revuesDuJour: number | null;
+  quotaAssistant: number | null;
+  assistantDuJour: number | null;
   bloque: boolean;
   creeLe: string;
   nbRevues: number | null;
+  derniereConnexion: string | null;
 }
 
 export interface AuthResponse {
@@ -121,6 +124,10 @@ export interface SystemeInfo {
   temperature: number;
   timeoutSec: number;
   quotaParDefaut: number;
+  quotaAssistantParDefaut: number;
+  analysesParMinute: number;
+  connexionsParMinute: number;
+  contexteMaxTokens: number;
   maxLignes: number;
 }
 
@@ -154,4 +161,19 @@ export interface ErreurApi {
   message: string;
   status: number;
   champs?: Record<string, string>;
+}
+
+export interface ParametresQuotas {
+  quotaRevuesDefaut: number;
+  quotaAssistantDefaut: number;
+}
+
+export interface PromptUtilisateur {
+  id: number;
+  titre: string;
+  contenu: string;
+  creeLe: string;
+  modifieLe: string;
+  partage: boolean;
+  modifiable: boolean;
 }

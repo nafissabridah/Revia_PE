@@ -3,7 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
   AssistantReponse, FiltresHistorique, MessageChat, OutilIA, Page, Probleme, PromptSysteme, RevueDetail, RevueResume, SystemeInfo,
-  TableauDeBord, Utilisateur,
+  ParametresQuotas, PromptUtilisateur, TableauDeBord, Utilisateur,
 } from './models';
 
 /** Accès à l'API REST. Angular ne parle qu'à notre back-end Spring : la clé d'API ne quitte jamais le serveur. */
@@ -77,8 +77,75 @@ export class ApiService {
     return this.http.get<Utilisateur[]>('/api/admin/utilisateurs');
   }
 
-  definirQuota(id: number, quota: number): Observable<Utilisateur> {
-    return this.http.put<Utilisateur>(`/api/admin/utilisateurs/${id}/quota`, { quota });
+  /** Résume la conversation pour libérer du contexte (« compactage »). */
+  compacter(messages: MessageChat[]): Observable<AssistantReponse> {
+    return this.http.post<AssistantReponse>('/api/assistant/compacter', { messages });
+  }
+
+  // ---------- prompts partagés (administrateur)
+  promptsPartages(): Observable<PromptUtilisateur[]> {
+    return this.http.get<PromptUtilisateur[]>('/api/admin/prompts-partages');
+  }
+
+  creerPromptPartage(p: { titre: string; contenu: string }): Observable<PromptUtilisateur> {
+    return this.http.post<PromptUtilisateur>('/api/admin/prompts-partages', p);
+  }
+
+  modifierPromptPartage(id: number, p: { titre: string; contenu: string }): Observable<PromptUtilisateur> {
+    return this.http.put<PromptUtilisateur>(`/api/admin/prompts-partages/${id}`, p);
+  }
+
+  supprimerPromptPartage(id: number): Observable<void> {
+    return this.http.delete<void>(`/api/admin/prompts-partages/${id}`);
+  }
+
+  // ---------- mes prompts (bibliothèque personnelle)
+  mesPrompts(): Observable<PromptUtilisateur[]> {
+    return this.http.get<PromptUtilisateur[]>('/api/mes-prompts');
+  }
+
+  creerMonPrompt(p: { titre: string; contenu: string }): Observable<PromptUtilisateur> {
+    return this.http.post<PromptUtilisateur>('/api/mes-prompts', p);
+  }
+
+  modifierMonPrompt(id: number, p: { titre: string; contenu: string }): Observable<PromptUtilisateur> {
+    return this.http.put<PromptUtilisateur>(`/api/mes-prompts/${id}`, p);
+  }
+
+  supprimerMonPrompt(id: number): Observable<void> {
+    return this.http.delete<void>(`/api/mes-prompts/${id}`);
+  }
+
+  creerUtilisateur(u: { nom: string; email: string; motDePasse: string; role: 'DEVELOPPEUR' | 'ADMIN'; quota: number | null; quotaAssistant: number | null }): Observable<Utilisateur> {
+    return this.http.post<Utilisateur>('/api/admin/utilisateurs', u);
+  }
+
+  modifierUtilisateur(id: number, u: { nom: string; email: string; motDePasse: string | null; quota: number | null; quotaAssistant: number | null }): Observable<Utilisateur> {
+    return this.http.put<Utilisateur>(`/api/admin/utilisateurs/${id}`, u);
+  }
+
+  supprimerUtilisateur(id: number): Observable<void> {
+    return this.http.delete<void>(`/api/admin/utilisateurs/${id}`);
+  }
+
+  definirQuota(id: number, quota: number, quotaAssistant: number | null): Observable<Utilisateur> {
+    return this.http.put<Utilisateur>(`/api/admin/utilisateurs/${id}/quota`, { quota, quotaAssistant });
+  }
+
+  changerRole(id: number, role: 'DEVELOPPEUR' | 'ADMIN'): Observable<Utilisateur> {
+    return this.http.put<Utilisateur>(`/api/admin/utilisateurs/${id}/role`, { role });
+  }
+
+  reinitialiserMotDePasse(id: number): Observable<{ motDePasse: string }> {
+    return this.http.post<{ motDePasse: string }>(`/api/admin/utilisateurs/${id}/reinitialisation-mot-de-passe`, {});
+  }
+
+  parametresQuotas(): Observable<ParametresQuotas> {
+    return this.http.get<ParametresQuotas>('/api/admin/parametres');
+  }
+
+  enregistrerParametresQuotas(p: ParametresQuotas & { appliquerATous: boolean }): Observable<ParametresQuotas> {
+    return this.http.put<ParametresQuotas>('/api/admin/parametres/quotas', p);
   }
 
   bloquer(id: number, valeur: boolean): Observable<Utilisateur> {

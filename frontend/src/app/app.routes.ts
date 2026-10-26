@@ -60,6 +60,12 @@ export const routes: Routes = [
         loadComponent: () => import('./pages/assistant/assistant.component').then((m) => m.AssistantComponent),
       },
       {
+        path: 'prompts',
+        canActivate: [developpeurGuard],
+        title: 'Mes prompts · RevIA',
+        loadComponent: () => import('./pages/prompts/prompts.component').then((m) => m.PromptsComponent),
+      },
+      {
         path: 'outils',
         canActivate: [developpeurGuard],
         title: 'Outils IA · RevIA',

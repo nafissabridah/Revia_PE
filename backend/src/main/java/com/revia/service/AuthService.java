@@ -6,7 +6,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.revia.config.ReviaProperties;
 import com.revia.domain.Developpeur;
 import com.revia.domain.Utilisateur;
 import com.revia.error.ApiException;
@@ -28,16 +27,16 @@ public class AuthService {
     private final PasswordEncoder encoder;
     private final JwtService jwt;
     private final QuotaService quotas;
-    private final ReviaProperties props;
+    private final ParametreService parametres;
 
     public AuthService(UtilisateurRepository utilisateurs, RevueRepository revues, PasswordEncoder encoder, JwtService jwt,
-                       QuotaService quotas, ReviaProperties props) {
+                       QuotaService quotas, ParametreService parametres) {
         this.utilisateurs = utilisateurs;
         this.revues = revues;
         this.encoder = encoder;
         this.jwt = jwt;
         this.quotas = quotas;
-        this.props = props;
+        this.parametres = parametres;
         this.hashFactice = encoder.encode("revia-compte-inexistant");
     }
 
@@ -47,12 +46,13 @@ public class AuthService {
         if (utilisateurs.existsByEmailIgnoreCase(email)) {
             throw new ApiException(ErrorCode.EMAIL_DEJA_UTILISE);
         }
-        Developpeur d = utilisateurs.save(new Developpeur(req.nom().trim(), email, encoder.encode(req.motDePasse()),
-                props.quotas().revuesParJour()));
-        return reponse(d);
+        Developpeur nouveau = new Developpeur(req.nom().trim(), email, encoder.encode(req.motDePasse()),
+                parametres.quotaRevuesDefaut());
+        nouveau.setQuotaAssistant(parametres.quotaAssistantDefaut());
+        return reponse(utilisateurs.save(nouveau));
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public Dtos.AuthResponse connecter(Dtos.ConnexionRequest req) {
         Utilisateur u = utilisateurs.findByEmailIgnoreCase(req.email().trim()).orElse(null);
         boolean ok = encoder.matches(req.motDePasse(), u == null ? hashFactice : u.getMotDePasseHash());
@@ -62,6 +62,7 @@ public class AuthService {
         if (u.isBloque()) {
             throw new ApiException(ErrorCode.COMPTE_BLOQUE);
         }
+        u.enregistrerConnexion();
         return reponse(u);
     }
 

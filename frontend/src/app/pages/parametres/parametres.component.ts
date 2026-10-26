@@ -31,7 +31,7 @@ import { NotifService } from '../../core/notif.service';
             <input class="input" [value]="auth.utilisateur()?.email" disabled />
           </div>
           <p class="info">Compte créé le {{ auth.utilisateur()?.creeLe | date: 'dd/MM/yyyy' }} ·
-            @if (auth.estDeveloppeur()) { quota : {{ auth.utilisateur()?.quotaJournalier }} revues / jour } @else { administrateur }</p>
+            @if (auth.estDeveloppeur()) { quotas : {{ auth.utilisateur()?.quotaJournalier }} revues et {{ auth.utilisateur()?.quotaAssistant }} requêtes assistant / jour } @else { administrateur }</p>
           <button class="btn primaire" type="submit" [disabled]="profil.invalid || profil.pristine">Enregistrer</button>
         </form>
 

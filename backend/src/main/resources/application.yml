@@ -80,6 +80,7 @@ revia:
     jwt-minutes: ${REVIA_JWT_MINUTES:120}
   quotas:
     revues-par-jour: ${REVIA_QUOTA_JOUR:50}
+    assistant-par-jour: ${REVIA_QUOTA_ASSISTANT:100}
     analyses-par-minute: ${REVIA_ANALYSES_MINUTE:10}
     connexions-par-minute: ${REVIA_CONNEXIONS_MINUTE:10}
   admin:
