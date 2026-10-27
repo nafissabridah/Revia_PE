@@ -3,7 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
   AssistantReponse, FiltresHistorique, MessageChat, OutilIA, Page, Probleme, PromptSysteme, RevueDetail, RevueResume, SystemeInfo,
-  TableauDeBord, Utilisateur,
+  TableauDeBord, Utilisateur, Snippet, RegleRevue, GraviteRegle,
 } from './models';
 
 /** Accès à l'API REST. Angular ne parle qu'à notre back-end Spring : la clé d'API ne quitte jamais le serveur. */
@@ -11,7 +11,7 @@ import {
 export class ApiService {
   private readonly http = inject(HttpClient);
 
-  soumettre(req: { titre?: string; langage: string; code: string; mode: string }): Observable<RevueDetail> {
+  soumettre(req: { titre?: string; langage: string; code: string; mode: string; regles?: number[]; snippetId?: number }): Observable<RevueDetail> {
     return this.http.post<RevueDetail>('/api/revues', req);
   }
 
@@ -105,5 +105,48 @@ export class ApiService {
       }
     }
     return p;
+  }
+
+  // ---------- Bibliothèque de snippets (CRUD) ----------
+  snippets(): Observable<Snippet[]> {
+    return this.http.get<Snippet[]>('/api/snippets');
+  }
+
+  creerSnippet(s: { titre: string; langage: string; tags: string; code: string }): Observable<Snippet> {
+    return this.http.post<Snippet>('/api/snippets', s);
+  }
+
+  modifierSnippet(id: number, s: { titre: string; langage: string; tags: string; code: string }): Observable<Snippet> {
+    return this.http.put<Snippet>(`/api/snippets/${id}`, s);
+  }
+
+  /** Historique des checks (revues) d'un snippet. */
+  checksSnippet(id: number): Observable<RevueResume[]> {
+    return this.http.get<RevueResume[]>(`/api/snippets/${id}/checks`);
+  }
+
+  supprimerSnippet(id: number): Observable<void> {
+    return this.http.delete<void>(`/api/snippets/${id}`);
+  }
+
+  // ---------- Règles de revue (CRUD) ----------
+  regles(): Observable<RegleRevue[]> {
+    return this.http.get<RegleRevue[]>('/api/regles');
+  }
+
+  creerRegle(r: { nom: string; description: string; gravite: GraviteRegle; active: boolean }): Observable<RegleRevue> {
+    return this.http.post<RegleRevue>('/api/regles', r);
+  }
+
+  modifierRegle(id: number, r: { nom: string; description: string; gravite: GraviteRegle; active: boolean }): Observable<RegleRevue> {
+    return this.http.put<RegleRevue>(`/api/regles/${id}`, r);
+  }
+
+  basculerRegle(id: number): Observable<RegleRevue> {
+    return this.http.patch<RegleRevue>(`/api/regles/${id}/basculer`, {});
+  }
+
+  supprimerRegle(id: number): Observable<void> {
+    return this.http.delete<void>(`/api/regles/${id}`);
   }
 }

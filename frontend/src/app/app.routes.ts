@@ -54,6 +54,18 @@ export const routes: Routes = [
         loadComponent: () => import('./pages/tableau-de-bord/tableau-de-bord.component').then((m) => m.TableauDeBordComponent),
       },
       {
+        path: 'snippets',
+        canActivate: [developpeurGuard],
+        title: 'Snippets · RevIA',
+        loadComponent: () => import('./pages/snippets/snippets.component').then((m) => m.SnippetsComponent),
+      },
+      {
+        path: 'regles',
+        canActivate: [developpeurGuard],
+        title: 'Règles de revue · RevIA',
+        loadComponent: () => import('./pages/regles/regles.component').then((m) => m.ReglesComponent),
+      },
+      {
         path: 'assistant',
         canActivate: [developpeurGuard],
         title: 'Assistant IA · RevIA',

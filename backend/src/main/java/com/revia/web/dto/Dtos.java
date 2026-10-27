@@ -59,7 +59,15 @@ public final class Dtos {
             @Size(max = 20) String langage,
             @NotBlank(message = "Collez entre 1 et 2 000 lignes de code.")
             @Size(max = 200_000, message = "Collez entre 1 et 2 000 lignes de code.") String code,
-            @Pattern(regexp = "complet|securite|qualite", message = "Mode inconnu.") String mode) {
+            @Pattern(regexp = "complet|securite|qualite", message = "Mode inconnu.") String mode,
+            // Règles personnalisées choisies pour cette revue (null = toutes les règles actives)
+            java.util.List<Long> regles,
+            // Snippet analysé (historique des checks), null si la revue ne vient pas de la bibliothèque
+            Long snippetId) {
+
+        public RevueRequest(String titre, String langage, String code, String mode) {
+            this(titre, langage, code, mode, null, null);
+        }
     }
 
     public record RevueResume(Long id, String titre, String langage, LocalDateTime creeLe, int score,

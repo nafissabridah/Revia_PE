@@ -25,6 +25,14 @@ public interface RevueRepository extends JpaRepository<Revue, Long>, JpaSpecific
 
     long countByAuteurId(Long auteurId);
 
+    /** Historique des checks d'un snippet (du plus récent au plus ancien). */
+    @EntityGraph(attributePaths = {"problemes"})
+    List<Revue> findByAuteurIdAndSnippetIdOrderByCreeLeDesc(Long auteurId, Long snippetId);
+
+    /** Toutes les revues rattachées à un snippet, pour calculer l'état de chaque snippet. */
+    @EntityGraph(attributePaths = {"problemes"})
+    List<Revue> findByAuteurIdAndSnippetIdIsNotNullOrderByCreeLeDesc(Long auteurId);
+
     @EntityGraph(attributePaths = {"problemes"})
     List<Revue> findByAuteurIdAndCreeLeGreaterThanEqualOrderByCreeLeAsc(Long auteurId, LocalDateTime depuis);
 

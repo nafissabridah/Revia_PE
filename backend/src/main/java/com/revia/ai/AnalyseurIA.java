@@ -27,6 +27,7 @@ import com.revia.config.ReviaProperties;
 import com.revia.domain.Categorie;
 import com.revia.domain.Gravite;
 import com.revia.domain.PromptSysteme;
+import com.revia.domain.RegleRevue;
 import com.revia.error.ApiException;
 import com.revia.error.ErrorCode;
 
@@ -96,6 +97,14 @@ public class AnalyseurIA {
     }
 
     public Resultat analyser(String code, String langage, String mode) {
+        return analyser(code, langage, mode, List.of());
+    }
+
+    /**
+     * Analyse avec les règles de revue personnalisées (actives) du développeur :
+     * elles sont ajoutées au prompt système pour que l'IA les vérifie en plus des contrôles standards.
+     */
+    public Resultat analyser(String code, String langage, String mode, List<RegleRevue> regles) {
         if (!llm.disponible()) {
             log.error("Analyse refusée : clé d'API absente pour le fournisseur {}", llm.fournisseur());
             throw new ApiException(ErrorCode.LLM_CLE_ABSENTE);
@@ -107,7 +116,8 @@ public class AnalyseurIA {
         int nbLignes = PreparateurCode.lignes(code).size();
         List<PreparateurCode.Morceau> morceaux = preparateur.decouper(masque.code(), config.chunkLines());
         PromptSysteme prompt = prompts.actif();
-        String systeme = prompt.construire(langage, consigneMode(mode));
+        String systeme = prompt.construire(langage, consigneMode(mode)) + consigneRegles(regles);
+        log.info("Prompt système {} : {} règle(s) personnalisée(s) injectée(s)", prompt.getVersion(), regles == null ? 0 : regles.size());
 
         List<ProblemeValide> tous = new ArrayList<>();
         List<String> resumes = new ArrayList<>();
@@ -243,6 +253,25 @@ public class AnalyseurIA {
             throw new IllegalArgumentException("aucun objet JSON dans la réponse");
         }
         return s.substring(debut, fin + 1);
+    }
+
+    /** Bloc ajouté à la fin du prompt système : la checklist personnalisée du développeur. */
+    static String consigneRegles(List<RegleRevue> regles) {
+        if (regles == null || regles.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder("\n\nRÈGLES PERSONNALISÉES DE L'ÉQUIPE (à vérifier en plus des contrôles standards) :\n");
+        for (RegleRevue r : regles) {
+            sb.append("- [").append(r.getGravite().name()).append("] ").append(r.getNom());
+            if (r.getDescription() != null && !r.getDescription().isBlank()) {
+                sb.append(" : ").append(r.getDescription().trim());
+            }
+            sb.append('\n');
+        }
+        sb.append("Pour chaque violation d'une de ces règles, signale un problème : gravité = celle indiquée entre crochets, ")
+          .append("titre commençant par « Règle : <nom de la règle> », catégorie la plus adaptée parmi celles autorisées. ")
+          .append("Ne signale rien pour une règle respectée.");
+        return sb.toString();
     }
 
     static String consigneMode(String mode) {

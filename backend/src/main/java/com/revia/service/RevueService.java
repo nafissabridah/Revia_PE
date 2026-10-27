@@ -24,11 +24,14 @@ import com.revia.config.ReviaProperties;
 import com.revia.domain.Correction;
 import com.revia.domain.Developpeur;
 import com.revia.domain.Probleme;
+import com.revia.domain.RegleRevue;
 import com.revia.domain.Revue;
 import com.revia.domain.Utilisateur;
 import com.revia.error.ApiException;
 import com.revia.error.ErrorCode;
 import com.revia.repository.ProblemeRepository;
+import com.revia.repository.RegleRevueRepository;
+import com.revia.repository.SnippetRepository;
 import com.revia.repository.RevueRepository;
 import com.revia.repository.UtilisateurRepository;
 import com.revia.web.dto.Dtos;
@@ -47,10 +50,12 @@ public class RevueService {
     private final QuotaService quotas;
     private final TransactionTemplate tx;
     private final ReviaProperties props;
+    private final RegleRevueRepository regles;
+    private final SnippetRepository snippets;
 
     public RevueService(RevueRepository revues, ProblemeRepository problemes, UtilisateurRepository utilisateurs,
                         AnalyseurIA analyseur, PreparateurCode preparateur, QuotaService quotas, TransactionTemplate tx,
-                        ReviaProperties props) {
+                        ReviaProperties props, RegleRevueRepository regles, SnippetRepository snippets) {
         this.revues = revues;
         this.problemes = problemes;
         this.utilisateurs = utilisateurs;
@@ -59,6 +64,8 @@ public class RevueService {
         this.quotas = quotas;
         this.tx = tx;
         this.props = props;
+        this.regles = regles;
+        this.snippets = snippets;
     }
 
     /** Filtres de l'historique. */
@@ -84,12 +91,23 @@ public class RevueService {
         String mode = req.mode() == null || req.mode().isBlank() ? "complet" : req.mode();
         String titre = req.titre() == null || req.titre().isBlank() ? titreParDefaut(code, langage) : req.titre().trim();
 
-        AnalyseurIA.Resultat res = analyseur.analyser(code, langage, mode);
+        // Rattachement au snippet (uniquement s'il appartient bien au développeur)
+        Long snippetId = req.snippetId() == null ? null
+                : snippets.findByIdAndUtilisateurId(req.snippetId(), userId).map(s -> s.getId()).orElse(null);
+
+        // Règles de revue personnalisées actives du développeur : injectées dans le prompt système
+        // (si le développeur a coché des règles pour cette revue, seules celles-ci sont utilisées)
+        List<RegleRevue> reglesActives = regles.findByUtilisateurIdOrderByCreeLeDesc(userId).stream()
+                .filter(r -> req.regles() == null ? r.isActive() : req.regles().contains(r.getId())).toList();
+        AnalyseurIA.Resultat res = analyseur.analyser(code, langage, mode, reglesActives);
+        String noteRegles = reglesActives.isEmpty() ? "" : " Règles personnalisées appliquées (" + reglesActives.size() + ") : "
+                + String.join(", ", reglesActives.stream().map(RegleRevue::getNom).toList()) + ".";
 
         Long id = tx.execute(status -> {
             Developpeur d = developpeur(userId);
             Revue r = d.soumettreCode(titre, langage, code, mode);
-            r.setResume(res.resume());
+            r.setResume((res.resume() + noteRegles).trim());
+            r.setSnippetId(snippetId);
             r.setDureeMs(res.dureeMs());
             r.setFournisseur(res.fournisseur());
             r.setModele(res.modele());

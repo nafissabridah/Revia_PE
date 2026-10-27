@@ -1,5 +1,5 @@
 import { DecimalPipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, OnDestroy, computed, effect, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, OnDestroy, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
 import { ApiService } from '../../core/api.service';
@@ -7,7 +7,8 @@ import { AuthService } from '../../core/auth.service';
 import { TransfertCodeService } from '../../core/transfert-code.service';
 import { messageErreur } from '../../core/http';
 import { CATEGORIES, EXTENSIONS, GRAVITES_PLURIEL, LANGAGES, MODES, libelleLangage } from '../../core/libelles';
-import { Categorie, Gravite, Probleme, RevueDetail } from '../../core/models';
+import { Categorie, Gravite, Probleme, RegleRevue, RevueDetail } from '../../core/models';
+import { NotifService } from '../../core/notif.service';
 import { CategorieBadgeComponent, GraviteBadgeComponent } from '../../shared/badges';
 import { CodeEditorComponent } from '../../shared/code-editor.component';
 import { IconeComponent } from '../../shared/icone.component';
@@ -80,6 +81,34 @@ type Filtre = 'tous' | Categorie;
       </section>
 
       <section class="droite">
+        <!-- Règles personnalisées appliquées à cette revue (injectées dans le prompt système) -->
+        @if (regles().length && !analyse()) {
+          <div class="carte regles-choix">
+            <button type="button" class="regles-tete" (click)="reglesOuvertes.set(!reglesOuvertes())">
+              <app-icone nom="bouclier" [taille]="16" />
+              <b>Règles personnalisées</b>
+              <span class="badge neutre">{{ selection().length }} / {{ regles().length }} appliquée(s)</span>
+              <span class="chevron">{{ reglesOuvertes() ? '▴' : '▾' }}</span>
+            </button>
+            @if (reglesOuvertes()) {
+              <div class="regles-liste">
+                @for (rg of regles(); track rg.id) {
+                  <label class="regle-ligne">
+                    <input type="checkbox" [checked]="selection().includes(rg.id)" (change)="basculerRegle(rg.id)" />
+                    <span class="badge" [class]="'badge g-' + rg.gravite.toLowerCase()">{{ rg.gravite.toLowerCase() }}</span>
+                    <span>{{ rg.nom }}</span>
+                  </label>
+                }
+                <div class="regles-actions">
+                  <button type="button" class="btn lien" (click)="toutesRegles(true)">Tout cocher</button>
+                  <button type="button" class="btn lien" (click)="toutesRegles(false)">Tout décocher</button>
+                  <a routerLink="/regles" class="btn lien">Gérer les règles →</a>
+                </div>
+              </div>
+            }
+          </div>
+        }
+
         @if (erreur()) {
           <div class="carte erreur" role="alert">
             <b>{{ erreur() }}</b>
@@ -113,6 +142,9 @@ type Filtre = 'tous' | Categorie;
                 }
                 @if (r.nbMasquages) { <span class="badge neutre" title="Valeurs remplacées par ***MASQUÉ*** avant l'envoi au modèle">🔒 {{ r.nbMasquages }} secret(s) masqué(s)</span> }
               </div>
+              <button type="button" class="btn petit sauver-snippet" (click)="sauverSnippet()" [disabled]="sauvegardeSnippet()">
+                💾 Enregistrer ce code comme snippet
+              </button>
             </div>
           </div>
 
@@ -202,6 +234,13 @@ type Filtre = 'tous' | Categorie;
     .cpt i { width: 7px; height: 7px; border-radius: 50%; }
     .c-critique i { background: #ef4444; } .c-majeure i { background: #f97316; } .c-mineure i { background: #eab308; } .c-info i { background: #60a5fa; }
     .droite { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+    .regles-choix { padding: 0; margin-bottom: 14px; overflow: hidden; }
+    .regles-tete { width: 100%; display: flex; align-items: center; gap: 8px; padding: 12px 14px; background: none; border: none; cursor: pointer; font: inherit; color: inherit; text-align: left; }
+    .regles-tete .chevron { margin-left: auto; color: var(--texte-3); }
+    .regles-liste { border-top: 1px solid var(--bord); padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+    .regle-ligne { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+    .regles-actions { display: flex; gap: 14px; padding-top: 4px; font-size: 12.5px; }
+    .sauver-snippet { margin-top: 10px; }
     .resume { display: flex; gap: 18px; padding: 18px; align-items: center; }
     .resume h2 { font-size: 16px; margin-bottom: 6px; }
     .resume p { margin: 0 0 10px; color: var(--texte-2); font-size: 13px; line-height: 1.5; }
@@ -255,6 +294,15 @@ export class RevueComponent implements OnDestroy {
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly transfert = inject(TransfertCodeService);
+  private readonly notif = inject(NotifService);
+
+  /** Règles personnalisées de l'utilisateur et sélection pour la prochaine revue. */
+  readonly regles = signal<RegleRevue[]>([]);
+  readonly selection = signal<number[]>([]);
+  readonly reglesOuvertes = signal(false);
+  readonly sauvegardeSnippet = signal(false);
+  /** Snippet d'origine : la revue lui est rattachée tant que le code n'a pas été modifié. */
+  private snippetSource: { id: number; code: string } | null = null;
 
   /** Paramètre de route /revues/:id (absent pour /revues/nouvelle). */
   readonly id = input<string | undefined>(undefined);
@@ -299,6 +347,14 @@ export class RevueComponent implements OnDestroy {
   });
 
   constructor() {
+    // Par défaut : les règles actives sont cochées
+    this.api.regles().subscribe({
+      next: (l) => {
+        this.regles.set(l);
+        this.selection.set(l.filter((r) => r.active).map((r) => r.id));
+      },
+      error: () => { /* la revue reste possible sans règles */ },
+    });
     effect(() => {
       const id = this.id();
       if (id) {
@@ -308,6 +364,32 @@ export class RevueComponent implements OnDestroy {
         this.restaurerBrouillon();
       }
     }, { allowSignalWrites: true });
+  }
+
+  basculerRegle(id: number): void {
+    this.selection.update((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  }
+
+  toutesRegles(oui: boolean): void {
+    this.selection.set(oui ? this.regles().map((r) => r.id) : []);
+  }
+
+  /** Ferme la boucle : le code de la revue rejoint la bibliothèque de snippets. */
+  sauverSnippet(): void {
+    const r = this.revue();
+    if (!r) return;
+    this.sauvegardeSnippet.set(true);
+    const titre = (r.titre || 'Snippet').slice(0, 120);
+    this.api.creerSnippet({ titre, langage: r.langage, tags: `revue, score ${r.score}`, code: this.code() || r.code }).subscribe({
+      next: () => {
+        this.sauvegardeSnippet.set(false);
+        this.notif.succes('Code enregistré dans vos snippets.');
+      },
+      error: (e) => {
+        this.sauvegardeSnippet.set(false);
+        this.notif.erreur(messageErreur(e));
+      },
+    });
   }
 
   compte(c: Categorie): number {
@@ -341,7 +423,8 @@ export class RevueComponent implements OnDestroy {
     this.analyse.set(true);
     this.etape.set(0);
     this.minuteur = setInterval(() => this.etape.update((e) => Math.min(e + 1, ETAPES.length - 1)), 900);
-    this.api.soumettre({ titre: titre || undefined, langage: this.langage(), code, mode: this.mode() }).subscribe({
+    this.api.soumettre({ titre: titre || undefined, langage: this.langage(), code, mode: this.mode(), regles: this.regles().length ? this.selection() : undefined,
+      snippetId: this.snippetSource && this.snippetSource.code === code ? this.snippetSource.id : undefined }).subscribe({
       next: (r) => {
         this.arreter();
         try { localStorage.removeItem(CLE_BROUILLON); } catch { /* ignoré */ }
@@ -453,6 +536,15 @@ export class RevueComponent implements OnDestroy {
   }
 
   private restaurerBrouillon(): void {
+    // Code envoyé depuis la bibliothèque de snippets : prioritaire sur le brouillon
+    const transfere = untracked(() => this.transfert.prendre());
+    if (transfere) {
+      this.code.set(transfere.code);
+      this.langage.set(transfere.langage || 'auto');
+      this.snippetSource = transfere.snippetId ? { id: transfere.snippetId, code: transfere.code } : null;
+      this.titre.set('');
+      return;
+    }
     try {
       const b = JSON.parse(localStorage.getItem(CLE_BROUILLON) ?? 'null');
       if (b && typeof b.code === 'string') {

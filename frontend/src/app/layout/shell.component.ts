@@ -25,6 +25,8 @@ import { IconeComponent } from '../shared/icone.component';
             <a routerLink="/historique" routerLinkActive="actif"><app-icone nom="historique" />Historique
               <span class="compteur">{{ auth.utilisateur()?.nbRevues ?? 0 }}</span></a>
             <a routerLink="/tableau-de-bord" routerLinkActive="actif"><app-icone nom="tableau" />Tableau de bord</a>
+            <a routerLink="/snippets" routerLinkActive="actif"><app-icone nom="etoile" />Snippets</a>
+            <a routerLink="/regles" routerLinkActive="actif"><app-icone nom="bouclier" />Règles de revue</a>
             <div class="section">Assistant IA</div>
             <a routerLink="/assistant" routerLinkActive="actif"><app-icone nom="chat" />Assistant IA<span class="nouveau">Gemini</span></a>
             <a routerLink="/outils" routerLinkActive="actif"><app-icone nom="outils" />Outils IA</a>

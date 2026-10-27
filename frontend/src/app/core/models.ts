@@ -155,3 +155,33 @@ export interface ErreurApi {
   status: number;
   champs?: Record<string, string>;
 }
+
+export interface Snippet {
+  id: number;
+  titre: string;
+  langage: string;
+  tags: string | null;
+  code: string;
+  creeLe: string;
+  modifieLe: string;
+  /** Historique des checks : nombre de revues, dernier résultat et état calculé côté serveur. */
+  nbChecks: number;
+  derniereRevueId: number | null;
+  dernierScore: number | null;
+  dernierCritiques: number | null;
+  dernierCheck: string | null;
+  etat: EtatSnippet;
+}
+
+export type EtatSnippet = 'non_checke' | 'valide' | 'a_corriger' | 'modifie';
+
+export type GraviteRegle = 'CRITIQUE' | 'MAJEURE' | 'MINEURE' | 'INFO';
+
+export interface RegleRevue {
+  id: number;
+  nom: string;
+  description: string | null;
+  gravite: GraviteRegle;
+  active: boolean;
+  creeLe: string;
+}

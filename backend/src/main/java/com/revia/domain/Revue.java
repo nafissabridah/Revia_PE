@@ -78,6 +78,10 @@ public class Revue {
     @Column(name = "problemes_rejetes", nullable = false)
     private int problemesRejetes;
 
+    /** Snippet analysé (historique des checks), null pour une revue lancée hors bibliothèque. */
+    @Column(name = "snippet_id")
+    private Long snippetId;
+
     @OneToMany(mappedBy = "revue", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("ordre ASC")
     private List<Probleme> problemes = new ArrayList<>();
@@ -92,6 +96,14 @@ public class Revue {
         this.code = code;
         this.mode = mode;
         this.nbLignes = code.split("\\R", -1).length;
+    }
+
+    public Long getSnippetId() {
+        return snippetId;
+    }
+
+    public void setSnippetId(Long snippetId) {
+        this.snippetId = snippetId;
     }
 
     public void ajouterProbleme(Probleme p) {
