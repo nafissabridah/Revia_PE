@@ -25,6 +25,10 @@ public interface RevueRepository extends JpaRepository<Revue, Long>, JpaSpecific
 
     long countByAuteurId(Long auteurId);
 
+    /** Activité récente de tous les développeurs : [auteurId, date, nbMasquages] (détection d'usage anormal, quotas conseillés). */
+    @Query("select r.auteur.id, r.creeLe, r.nbMasquages from Revue r where r.creeLe >= :depuis")
+    List<Object[]> activiteDepuis(@Param("depuis") LocalDateTime depuis);
+
     @EntityGraph(attributePaths = {"problemes"})
     List<Revue> findByAuteurIdAndCreeLeGreaterThanEqualOrderByCreeLeAsc(Long auteurId, LocalDateTime depuis);
 

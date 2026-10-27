@@ -227,7 +227,7 @@ c'est quoi les étapes pour commencer ?
 
 | Campagne | Résultat documenté | Commande agent |
 |----------|-------------------|----------------|
-| Back-end | 42/42 dans README ; **59/59** possible après ajout Assistant (voir §20) | `cd backend && mvn test` |
+| Back-end | 42/42 dans README ; **61/61** possible après ajout Assistant (voir §20) | `cd backend && mvn test` |
 | Front-end | 14/14 | `cd frontend && npx ng test --watch=false --browsers=ChromeHeadless` |
 | Jeu d’essai demo | 20/20 défauts, 0/3 faux positifs sains | `JeuEssaiIATest` |
 | Jeu d’essai Gemini | 19/20 (95 %), 0/3 faux positifs | `docs/rapport-jeu-essai-gemini.md` |
@@ -999,6 +999,47 @@ puis écris les tests (AssistantIATest, AssistantApiTest, markdown.spec.ts, flux
 | Rate limit | 429 | Trop de demandes… + `Retry-After` |
 
 
+**Évolution : administration assistée par IA (profil, quotas conseillés, assistant en langage naturel, alertes)** (prompt rédigé après la livraison initiale)
+
+*Prompt consolidé (format agent)*
+
+```text
+Tu es un ingénieur full-stack senior (Spring Boot 3 / Angular 17).
+
+CONTEXTE
+La page Admin gère comptes, rôles et quotas. RevIA enregistre déjà les revues (score, problèmes), l'usage de l'assistant, les quotas, la dernière connexion et limite le débit avec Bucket4j.
+
+MISSION
+1) Profil de compétences d'un développeur : failles récurrentes, évolution du score, 3 axes de progression (fiche dans la page Admin).
+2) Quotas conseillés : analyse de la consommation des 30 derniers jours, quota proposé par développeur, bouton « Appliquer » (et « Tout appliquer »).
+3) Assistant d'administration en langage naturel : l'IA traduit « bloque les comptes inactifs depuis 30 jours » en actions ; l'administrateur confirme avant exécution.
+4) Détection d'usage anormal : pic de requêtes, secrets en dur répétés, connexions échouées répétées, quota presque atteint.
+
+CONTRAINTES
+- Les chiffres sont calculés par le serveur ; l'IA ne fait que rédiger ou traduire. Elle ne reçoit jamais de code source, seulement des agrégats (compteurs, titres de problèmes, noms de comptes).
+- L'IA ne contrôle jamais l'exécution : actions limitées à BLOQUER, DEBLOQUER, CHANGER_ROLE, DEFINIR_QUOTA ; les comptes sont résolus par le serveur ; chaque action est revalidée à l'exécution ; un administrateur n'est jamais bloqué ; son propre rôle n'est pas modifiable ; pas de suppression ni de mot de passe par l'assistant.
+- Sans IA (mode demo, clé absente, timeout), des règles de secours produisent le même format de réponse.
+- Réservé au rôle ADMIN (403 sinon).
+
+VÉRIFICATION
+ApiIntegrationTest.adminProfilQuotasEtAlertes et assistantAdministration ; ng build production ; parcours : page Admin → saisir une commande → confirmer.
+```
+
+*Échanges réels*
+
+*Prompt (brainstorm)*
+````text
+WHAT CAN WE ADD TO USERMANAHEMTN DONE A FUNCTIOANNLITY WITH AI BRAINSTORM
+````
+- **Réponse IA [reconstitué] :** dix idées classées (profil de compétences, quotas conseillés, assistant d'administration, détection d'usage anormal, mot de passe lisible, résumé hebdomadaire, comptes inactifs, parcours d'apprentissage…), avec des précautions : analyses réservées à l'admin, confirmation humaine avant toute action sur un compte, masquage des secrets.
+
+*Prompt (décision)*
+````text
+do it  [liste collée : profil de compétences, recommandation de quotas, assistant d'administration en langage naturel, détection d'usage anormal]
+````
+- **Réponse IA [reconstitué] :** `ai/ConseilIA.java` (appel IA avec texte de secours), `service/AdminIAService.java` (profil, recommandations, alertes, interprétation, exécution), `security/JournalConnexions.java` (échecs de connexion en mémoire, vidés au redémarrage), endpoints `/api/admin/...` ci-dessus ; côté interface : barre « Assistant d'administration » et bouton « Profil » (onglet Utilisateurs), bloc « Quotas conseillés par l'IA » (onglet Quotas), onglet « Alertes » et indicateur dans le bandeau.
+- **À retenir / limites :** les noms de comptes (sans e-mail) sont envoyés au LLM pour l'interprétation d'une commande ; les échecs de connexion ne sont conservés qu'en mémoire (15 minutes de fenêtre, perdus au redémarrage) ; le résumé IA des alertes n'est demandé qu'à l'ouverture de l'onglet pour garder la page rapide.
+
 **Évolution : bibliothèque « Mes prompts » appelable depuis l'Assistant IA** (prompt rédigé après la livraison initiale)
 
 *Prompt consolidé (format agent)*
@@ -1144,6 +1185,11 @@ Ajoute une page paramètres où l'utilisateur voit son quota restant.
 | POST | `/api/assistant/compacter` | Non | Compacte la conversation `{messages}` (2 minimum, 40 maximum) en un résumé Markdown ; compte comme une requête assistant. `GET /api/systeme/info` publie `contexteMaxTokens` (12 000) |
 | GET / POST | `/api/mes-prompts` | Non | Bibliothèque de prompts personnels (liste triée par titre / création `{titre, contenu}`, 50 max par utilisateur) |
 | PUT / DELETE | `/api/mes-prompts/{id}` | Non | Modifier / supprimer ; le prompt d'un autre utilisateur ou un prompt partagé → 404. `GET` renvoie aussi les prompts partagés (`partage: true`, `modifiable: false`) |
+| GET | `/api/admin/utilisateurs/{id}/profil` | ADMIN | Profil de compétences d'un développeur (statistiques calculées par le serveur + synthèse rédigée par l'IA) |
+| GET | `/api/admin/recommandations-quotas` | ADMIN | Quotas conseillés (pic des 30 derniers jours + 25 %, arrondi aux 5 supérieurs) + commentaire IA |
+| GET | `/api/admin/alertes[?resume=false]` | ADMIN | Alertes d'usage anormal (pic d'activité, secrets en dur répétés, connexions échouées, quota proche) ; `resume=false` évite l'appel IA |
+| POST | `/api/admin/assistant` | ADMIN | Interprète une commande en français → plan d'actions (rien n'est exécuté) |
+| POST | `/api/admin/assistant/executer` | ADMIN | Exécute les actions confirmées ; chacune est revalidée par le serveur |
 | GET / POST / PUT / DELETE | `/api/admin/prompts-partages[/{id}]` | ADMIN | Prompts « officiels » visibles de tous les développeurs (onglet « Prompts partagés » de la page Admin) |
 | GET | `/api/systeme/info` | Oui | Version, provider, model |
 | GET | `/actuator/health` | Oui | Sonde |
@@ -1722,12 +1768,12 @@ seulement avec le fournisseur demo pour ne rien payer. ça servira pour la soute
 | JeuEssaiIATest | 1 | 23 extraits manifest |
 | LlmConfigTest | 2 | Providers |
 | RedacteurRevueTest | 5 | Texte demo déterministe |
-| ApiIntegrationTest | 12 | Auth, revue, isolation, quota, admin, CRUD utilisateurs, rôles, quota assistant, réinitialisation, mes prompts, prompts partagés, dernière connexion, en-têtes Bucket4j, compactage |
+| ApiIntegrationTest | 14 | Auth, revue, isolation, quota, admin, CRUD utilisateurs, rôles, quota assistant, réinitialisation, mes prompts, prompts partagés, dernière connexion, en-têtes Bucket4j, compactage, admin IA (profil, quotas conseillés, alertes, assistant d'administration) |
 | ErreursApiTest | 4 | Erreurs LLM, Bucket4j |
 | AssistantIATest | 9 | Chat/outils IA unitaire |
 | AssistantApiTest | 3 | MockMvc assistant + SSE |
 
-**Total actuel attendu : 59 tests** (README mentionne 42 — documenter l’écart si README non mis à jour).
+**Total actuel attendu : 61 tests** (README mentionne 42 — documenter l’écart si README non mis à jour).
 
 **Front :** `npx ng test --watch=false --browsers=ChromeHeadless` — **21 tests** (relevé à l'exécution ; le README en annonce 14).
 

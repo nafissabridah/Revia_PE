@@ -173,6 +173,57 @@ public final class Dtos {
             @Min(value = 0, message = "Le quota doit être positif.") @Max(value = 10_000, message = "Quota maximum : 10 000.") Integer quotaAssistant) {
     }
 
+    // ---------- Administration assistée par IA (profil, quotas conseillés, alertes, commandes)
+    public record Recurrent(String titre, long occurrences) {
+    }
+
+    public record ProfilCompetences(Long utilisateurId, String nom, int nbRevues, int scoreMoyen, int scoreInitial, int scoreRecent,
+                                    String tendance, List<Recurrent> recurrents, Map<String, Long> parCategorie,
+                                    Map<String, Long> parGravite, long nbMasquages, String synthese, String source) {
+    }
+
+    public record RecommandationQuota(Long utilisateurId, String nom, int quotaRevues, int quotaAssistant, int recommandeRevues,
+                                      int recommandeAssistant, double moyenneRevuesJour, int picRevues, double moyenneAssistantJour,
+                                      int picAssistant, int joursActifs, String explication, boolean modificationUtile) {
+    }
+
+    public record RecommandationsQuotas(List<RecommandationQuota> recommandations, String commentaire, String source) {
+    }
+
+    public record Alerte(String niveau, String type, Long utilisateurId, String nom, String message, String detail, LocalDateTime date) {
+    }
+
+    public record Alertes(List<Alerte> alertes, String resume, String source) {
+    }
+
+    public record CommandeRequest(
+            @NotBlank(message = "Écrivez une commande.") @Size(max = 500, message = "Commande limitée à 500 caractères.") String commande) {
+    }
+
+    public record ActionPlan(String type, Long utilisateurId, String nom, String libelle, String role, Integer quota, Integer quotaAssistant) {
+    }
+
+    public record PlanAdmin(String interpretation, String source, List<ActionPlan> actions, List<String> avertissements) {
+    }
+
+    public record ActionRequest(
+            @NotBlank @Pattern(regexp = "BLOQUER|DEBLOQUER|CHANGER_ROLE|DEFINIR_QUOTA", message = "Action inconnue.") String type,
+            @NotNull Long utilisateurId,
+            @Pattern(regexp = "DEVELOPPEUR|ADMIN", message = "Rôle inconnu.") String role,
+            @Min(0) @Max(10_000) Integer quota,
+            @Min(0) @Max(10_000) Integer quotaAssistant) {
+    }
+
+    public record ExecutionRequest(@NotEmpty(message = "Aucune action à exécuter.") @Size(max = 50, message = "50 actions maximum.")
+                                   List<@Valid ActionRequest> actions) {
+    }
+
+    public record ResultatAction(String type, Long utilisateurId, String nom, boolean ok, String message) {
+    }
+
+    public record ResultatExecution(List<ResultatAction> resultats) {
+    }
+
     public record PromptRequest(
             @NotBlank @Size(max = 20) @Pattern(regexp = "[A-Za-z0-9._-]+", message = "Version : lettres, chiffres, . _ - uniquement.") String version,
             @NotBlank @Size(max = 20_000) String contenu) {

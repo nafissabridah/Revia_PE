@@ -3,7 +3,7 @@ import { Injectable, inject } from '@angular/core';
 import { Observable } from 'rxjs';
 import {
   AssistantReponse, FiltresHistorique, MessageChat, OutilIA, Page, Probleme, PromptSysteme, RevueDetail, RevueResume, SystemeInfo,
-  ParametresQuotas, PromptUtilisateur, TableauDeBord, Utilisateur,
+  ActionPlan, Alertes, ParametresQuotas, PlanAdmin, ProfilCompetences, PromptUtilisateur, RecommandationsQuotas, ResultatAction, TableauDeBord, Utilisateur,
 } from './models';
 
 /** Accès à l'API REST. Angular ne parle qu'à notre back-end Spring : la clé d'API ne quitte jamais le serveur. */
@@ -80,6 +80,27 @@ export class ApiService {
   /** Résume la conversation pour libérer du contexte (« compactage »). */
   compacter(messages: MessageChat[]): Observable<AssistantReponse> {
     return this.http.post<AssistantReponse>('/api/assistant/compacter', { messages });
+  }
+
+  // ---------- administration assistée par IA
+  profilCompetences(id: number): Observable<ProfilCompetences> {
+    return this.http.get<ProfilCompetences>(`/api/admin/utilisateurs/${id}/profil`);
+  }
+
+  recommandationsQuotas(): Observable<RecommandationsQuotas> {
+    return this.http.get<RecommandationsQuotas>('/api/admin/recommandations-quotas');
+  }
+
+  alertes(avecResume = true): Observable<Alertes> {
+    return this.http.get<Alertes>('/api/admin/alertes', { params: { resume: avecResume } });
+  }
+
+  interpreterCommande(commande: string): Observable<PlanAdmin> {
+    return this.http.post<PlanAdmin>('/api/admin/assistant', { commande });
+  }
+
+  executerActions(actions: Pick<ActionPlan, 'type' | 'utilisateurId' | 'role' | 'quota' | 'quotaAssistant'>[]): Observable<{ resultats: ResultatAction[] }> {
+    return this.http.post<{ resultats: ResultatAction[] }>('/api/admin/assistant/executer', { actions });
   }
 
   // ---------- prompts partagés (administrateur)

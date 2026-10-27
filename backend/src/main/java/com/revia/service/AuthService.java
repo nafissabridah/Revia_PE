@@ -12,6 +12,7 @@ import com.revia.error.ApiException;
 import com.revia.error.ErrorCode;
 import com.revia.repository.RevueRepository;
 import com.revia.repository.UtilisateurRepository;
+import com.revia.security.JournalConnexions;
 import com.revia.security.JwtService;
 import com.revia.web.dto.Dtos;
 
@@ -28,15 +29,17 @@ public class AuthService {
     private final JwtService jwt;
     private final QuotaService quotas;
     private final ParametreService parametres;
+    private final JournalConnexions journal;
 
     public AuthService(UtilisateurRepository utilisateurs, RevueRepository revues, PasswordEncoder encoder, JwtService jwt,
-                       QuotaService quotas, ParametreService parametres) {
+                       QuotaService quotas, ParametreService parametres, JournalConnexions journal) {
         this.utilisateurs = utilisateurs;
         this.revues = revues;
         this.encoder = encoder;
         this.jwt = jwt;
         this.quotas = quotas;
         this.parametres = parametres;
+        this.journal = journal;
         this.hashFactice = encoder.encode("revia-compte-inexistant");
     }
 
@@ -57,6 +60,7 @@ public class AuthService {
         Utilisateur u = utilisateurs.findByEmailIgnoreCase(req.email().trim()).orElse(null);
         boolean ok = encoder.matches(req.motDePasse(), u == null ? hashFactice : u.getMotDePasseHash());
         if (u == null || !ok) {
+            journal.echec(req.email());
             throw new ApiException(ErrorCode.IDENTIFIANTS_INVALIDES);
         }
         if (u.isBloque()) {

@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.revia.ai.PromptService;
 import com.revia.security.UtilisateurConnecte;
+import com.revia.service.AdminIAService;
 import com.revia.service.AdminService;
 import com.revia.service.Mapper;
 import com.revia.service.PromptUtilisateurService;
@@ -31,8 +32,10 @@ public class AdminController {
     private final AdminService admin;
     private final PromptService prompts;
     private final PromptUtilisateurService promptsUtilisateur;
+    private final AdminIAService adminIA;
 
-    public AdminController(AdminService admin, PromptService prompts, PromptUtilisateurService promptsUtilisateur) {
+    public AdminController(AdminService admin, PromptService prompts, PromptUtilisateurService promptsUtilisateur, AdminIAService adminIA) {
+        this.adminIA = adminIA;
         this.admin = admin;
         this.prompts = prompts;
         this.promptsUtilisateur = promptsUtilisateur;
@@ -60,6 +63,31 @@ public class AdminController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void supprimer(@AuthenticationPrincipal UtilisateurConnecte u, @PathVariable Long id) {
         admin.supprimerUtilisateur(u.id(), id);
+    }
+
+    @GetMapping("/utilisateurs/{id}/profil")
+    public Dtos.ProfilCompetences profil(@PathVariable Long id) {
+        return adminIA.profil(id);
+    }
+
+    @GetMapping("/recommandations-quotas")
+    public Dtos.RecommandationsQuotas recommandationsQuotas() {
+        return adminIA.recommandations();
+    }
+
+    @GetMapping("/alertes")
+    public Dtos.Alertes alertes(@org.springframework.web.bind.annotation.RequestParam(defaultValue = "true") boolean resume) {
+        return adminIA.alertes(resume);
+    }
+
+    @PostMapping("/assistant")
+    public Dtos.PlanAdmin assistant(@AuthenticationPrincipal UtilisateurConnecte u, @Valid @RequestBody Dtos.CommandeRequest req) {
+        return adminIA.interpreter(u.id(), req.commande());
+    }
+
+    @PostMapping("/assistant/executer")
+    public Dtos.ResultatExecution executer(@AuthenticationPrincipal UtilisateurConnecte u, @Valid @RequestBody Dtos.ExecutionRequest req) {
+        return adminIA.executer(u.id(), req);
     }
 
     @PutMapping("/utilisateurs/{id}/quota")

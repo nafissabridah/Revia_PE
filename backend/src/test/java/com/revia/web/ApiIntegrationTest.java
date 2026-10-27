@@ -448,6 +448,100 @@ class ApiIntegrationTest {
         mvc.perform(get("/api/systeme/info")).andExpect(jsonPath("$.contexteMaxTokens").value(12000));
     }
 
+    long creerCompte(String adm, String nom, String email) throws Exception {
+        return json.readTree(mvc.perform(post("/api/admin/utilisateurs").header("Authorization", "Bearer " + adm)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("nom", nom, "email", email, "motDePasse", "Motdepasse1", "role", "DEVELOPPEUR"))))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString()).get("id").asLong();
+    }
+
+    @Test
+    @DisplayName("Admin IA : profil de compétences, quotas conseillés, alertes d'usage anormal")
+    void adminProfilQuotasEtAlertes() throws Exception {
+        String adm = admin();
+        String email = "profil-" + UUID.randomUUID() + "@revia.test";
+        long id = creerCompte(adm, "Ariane Moreau", email);
+        String token = json.readTree(mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("email", email, "motDePasse", "Motdepasse1"))))
+                .andReturn().getResponse().getContentAsString()).get("token").asText();
+        soumettre(token, "String sql = \"SELECT * FROM users WHERE id=\" + id;");
+
+        // Profil : statistiques calculées par le serveur + synthèse (règles de secours en mode demo)
+        mvc.perform(get("/api/admin/utilisateurs/" + id + "/profil").header("Authorization", "Bearer " + adm))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.nbRevues").value(1)).andExpect(jsonPath("$.source").value("regles"))
+                .andExpect(jsonPath("$.synthese").value(containsString("Axes de progression")));
+        mvc.perform(get("/api/admin/utilisateurs/" + id + "/profil").header("Authorization", "Bearer " + token)).andExpect(status().isForbidden());
+
+        // Quotas conseillés : une ligne par développeur, pic + 25 % arrondi aux 5 supérieurs, minimum 10 revues
+        mvc.perform(get("/api/admin/recommandations-quotas").header("Authorization", "Bearer " + adm))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.recommandations[?(@.utilisateurId==" + id + ")].picRevues").value(1))
+                .andExpect(jsonPath("$.recommandations[?(@.utilisateurId==" + id + ")].recommandeRevues").value(10))
+                .andExpect(jsonPath("$.commentaire").isNotEmpty());
+
+        // Alertes : 6 connexions échouées sur un compte existant => alerte critique
+        for (int i = 0; i < 6; i++) {
+            mvc.perform(post("/api/auth/login").contentType(MediaType.APPLICATION_JSON)
+                            .content(json.writeValueAsString(Map.of("email", email, "motDePasse", "mauvais-" + i))))
+                    .andExpect(status().isUnauthorized());
+        }
+        mvc.perform(get("/api/admin/alertes").header("Authorization", "Bearer " + adm))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.alertes[?(@.type=='connexions_echouees' && @.utilisateurId==" + id + ")].niveau").value("critique"))
+                .andExpect(jsonPath("$.resume").isNotEmpty());
+        mvc.perform(get("/api/admin/alertes").header("Authorization", "Bearer " + token)).andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("Assistant d'administration : commande en français -> plan à confirmer -> exécution validée par le serveur")
+    void assistantAdministration() throws Exception {
+        String adm = admin();
+        long zoelia = creerCompte(adm, "Zoelia Quentin", "zoelia-" + UUID.randomUUID() + "@revia.test");
+        long yanis = creerCompte(adm, "Yanis Bertrand", "yanis-" + UUID.randomUUID() + "@revia.test");
+
+        // Interprétation : rien n'est exécuté
+        mvc.perform(post("/api/admin/assistant").header("Authorization", "Bearer " + adm).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"commande\":\"bloque Zoelia\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.actions", hasSize(1)))
+                .andExpect(jsonPath("$.actions[0].type").value("BLOQUER")).andExpect(jsonPath("$.actions[0].utilisateurId").value(zoelia));
+        mvc.perform(post("/api/admin/assistant").header("Authorization", "Bearer " + adm).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"commande\":\"passe Yanis en administrateur\"}"))
+                .andExpect(jsonPath("$.actions", hasSize(1))).andExpect(jsonPath("$.actions[0].type").value("CHANGER_ROLE"))
+                .andExpect(jsonPath("$.actions[0].role").value("ADMIN"));
+        mvc.perform(post("/api/admin/assistant").header("Authorization", "Bearer " + adm).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"commande\":\"mets le quota assistant de Yanis a 33\"}"))
+                .andExpect(jsonPath("$.actions", hasSize(1))).andExpect(jsonPath("$.actions[0].type").value("DEFINIR_QUOTA"))
+                .andExpect(jsonPath("$.actions[0].quotaAssistant").value(33));
+        // Garde-fous : un administrateur n'est jamais bloqué ; commande incomprise ; réservé à l'admin
+        mvc.perform(post("/api/admin/assistant").header("Authorization", "Bearer " + adm).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"commande\":\"bloque Administrateur RevIA\"}"))
+                .andExpect(jsonPath("$.actions", hasSize(0))).andExpect(jsonPath("$.avertissements", hasSize(greaterThan(0))));
+        mvc.perform(post("/api/admin/assistant").header("Authorization", "Bearer " + adm).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"commande\":\"fais-moi un cafe\"}"))
+                .andExpect(jsonPath("$.actions", hasSize(0)));
+        mvc.perform(post("/api/admin/assistant").header("Authorization", "Bearer " + inscrire()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"commande\":\"bloque Zoelia\"}"))
+                .andExpect(status().isForbidden());
+
+        // Exécution confirmée : le serveur revalide chaque action
+        String corps = json.writeValueAsString(Map.of("actions", java.util.List.of(
+                Map.of("type", "BLOQUER", "utilisateurId", zoelia),
+                Map.of("type", "DEFINIR_QUOTA", "utilisateurId", yanis, "quota", 44, "quotaAssistant", 33),
+                Map.of("type", "BLOQUER", "utilisateurId", 999999))));
+        mvc.perform(post("/api/admin/assistant/executer").header("Authorization", "Bearer " + adm).contentType(MediaType.APPLICATION_JSON).content(corps))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.resultats[0].ok").value(true))
+                .andExpect(jsonPath("$.resultats[1].ok").value(true)).andExpect(jsonPath("$.resultats[2].ok").value(false));
+        mvc.perform(get("/api/admin/utilisateurs").header("Authorization", "Bearer " + adm))
+                .andExpect(jsonPath("$[?(@.id==" + zoelia + ")].bloque").value(true))
+                .andExpect(jsonPath("$[?(@.id==" + yanis + ")].quotaJournalier").value(44))
+                .andExpect(jsonPath("$[?(@.id==" + yanis + ")].quotaAssistant").value(33));
+        // Un administrateur ne peut pas être bloqué même par une action forgée
+        long adminId = json.readTree(mvc.perform(get("/api/me").header("Authorization", "Bearer " + adm))
+                .andReturn().getResponse().getContentAsString()).get("id").asLong();
+        mvc.perform(post("/api/admin/assistant/executer").header("Authorization", "Bearer " + adm).contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("actions", java.util.List.of(Map.of("type", "BLOQUER", "utilisateurId", adminId))))))
+                .andExpect(jsonPath("$.resultats[0].ok").value(false));
+    }
+
     @Test
     @DisplayName("Informations système publiques sans la clé d'API ; santé de l'application")
     void systeme() throws Exception {

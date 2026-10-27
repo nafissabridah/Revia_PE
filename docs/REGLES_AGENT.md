@@ -48,7 +48,7 @@ Ces règles peuvent être copiées dans `CLAUDE.md`, `.cursorrules` ou `.github/
 
 | Zone modifiée | Commande |
 |---------------|----------|
-| Backend | `cd backend && mvn -B test` (59 tests attendus) |
+| Backend | `cd backend && mvn -B test` (61 tests attendus) |
 | Frontend | `cd frontend && npx ng test --watch=false --browsers=ChromeHeadless && npx ng build --configuration production` (21 tests attendus) |
 | Prompt IA | `JeuEssaiIATest` + lecture de `backend/target/jeu-essai-rapport.md` |
 | Docker / déploiement | `docker compose up -d --build` puis connexion sur `http://localhost:8080` |

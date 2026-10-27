@@ -177,3 +177,87 @@ export interface PromptUtilisateur {
   partage: boolean;
   modifiable: boolean;
 }
+
+export interface Recurrent {
+  titre: string;
+  occurrences: number;
+}
+
+export interface ProfilCompetences {
+  utilisateurId: number;
+  nom: string;
+  nbRevues: number;
+  scoreMoyen: number;
+  scoreInitial: number;
+  scoreRecent: number;
+  tendance: 'progression' | 'baisse' | 'stable' | 'insuffisant';
+  recurrents: Recurrent[];
+  parCategorie: Record<string, number>;
+  parGravite: Record<string, number>;
+  nbMasquages: number;
+  synthese: string;
+  source: 'ia' | 'regles';
+}
+
+export interface RecommandationQuota {
+  utilisateurId: number;
+  nom: string;
+  quotaRevues: number;
+  quotaAssistant: number;
+  recommandeRevues: number;
+  recommandeAssistant: number;
+  moyenneRevuesJour: number;
+  picRevues: number;
+  moyenneAssistantJour: number;
+  picAssistant: number;
+  joursActifs: number;
+  explication: string;
+  modificationUtile: boolean;
+}
+
+export interface RecommandationsQuotas {
+  recommandations: RecommandationQuota[];
+  commentaire: string;
+  source: 'ia' | 'regles';
+}
+
+export interface Alerte {
+  niveau: 'critique' | 'attention' | 'info';
+  type: string;
+  utilisateurId: number | null;
+  nom: string;
+  message: string;
+  detail: string;
+  date: string;
+}
+
+export interface Alertes {
+  alertes: Alerte[];
+  resume: string;
+  source: 'ia' | 'regles';
+}
+
+export interface ActionPlan {
+  type: 'BLOQUER' | 'DEBLOQUER' | 'CHANGER_ROLE' | 'DEFINIR_QUOTA';
+  utilisateurId: number;
+  nom: string;
+  libelle: string;
+  role: 'DEVELOPPEUR' | 'ADMIN' | null;
+  quota: number | null;
+  quotaAssistant: number | null;
+}
+
+export interface PlanAdmin {
+  interpretation: string;
+  source: 'ia' | 'regles';
+  actions: ActionPlan[];
+  avertissements: string[];
+}
+
+export interface ResultatAction {
+  type: string;
+  utilisateurId: number;
+  nom: string;
+  ok: boolean;
+  message: string;
+}
