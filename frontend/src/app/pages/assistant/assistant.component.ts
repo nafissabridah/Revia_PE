@@ -1,10 +1,14 @@
 import { DecimalPipe } from '@angular/common';
-import { AfterViewChecked, ChangeDetectionStrategy, Component, ElementRef, OnInit, inject, signal, viewChild } from '@angular/core';
+import { AfterViewChecked, ChangeDetectionStrategy, Component, ElementRef, OnInit, computed, inject, signal, viewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ApiService } from '../../core/api.service';
+import { AuthService } from '../../core/auth.service';
 import { FluxIaService } from '../../core/flux-ia.service';
+import { messageErreur } from '../../core/http';
+import { NotifService } from '../../core/notif.service';
 import { LANGAGES } from '../../core/libelles';
-import { MessageChat } from '../../core/models';
+import { MessageChat, PromptUtilisateur } from '../../core/models';
 import { TransfertCodeService } from '../../core/transfert-code.service';
 import { IconeComponent } from '../../shared/icone.component';
 import { ReponseIaComponent } from '../../shared/reponse-ia.component';
@@ -20,7 +24,11 @@ const SUGGESTIONS = [
 interface Bulle extends MessageChat {
   meta?: string;
   enCours?: boolean;
+  compacte?: boolean;
 }
+
+/** Estimation grossière : environ 4 caractères par token. */
+const estimerTokens = (texte: string): number => Math.ceil(texte.length / 4);
 
 /** Assistant IA (chatbot) : questions libres sur le code, avec un extrait joint en option. */
 @Component({
@@ -31,6 +39,23 @@ interface Bulle extends MessageChat {
   template: `
     <header class="barre">
       <div class="fil"><a routerLink="/revues/nouvelle">RevIA</a> / <b>Assistant IA</b></div>
+      <div class="menu-prompts">
+        <button class="btn" type="button" (click)="menuPrompts.set(!menuPrompts())" [attr.aria-expanded]="menuPrompts()" aria-haspopup="true">
+          <app-icone nom="prompt" />Mes prompts
+        </button>
+        @if (menuPrompts()) {
+          <div class="carte liste-prompts" role="menu">
+            @for (p of prompts(); track p.id) {
+              <button type="button" role="menuitem" class="entree" (click)="inserer(p)">
+                <b>{{ p.titre }} @if (p.partage) { <i class="officiel">officiel</i> }</b><span>{{ p.contenu }}</span>
+              </button>
+            } @empty {
+              <p class="vide">Aucun prompt enregistré.</p>
+            }
+            <a routerLink="/prompts" class="gerer">Gérer mes prompts</a>
+          </div>
+        }
+      </div>
       <button class="btn" type="button" (click)="codeOuvert.set(!codeOuvert())">
         <app-icone nom="import" />{{ codeOuvert() ? 'Masquer le code joint' : 'Joindre du code' }}
       </button>
@@ -52,12 +77,21 @@ interface Bulle extends MessageChat {
                   <button type="button" class="suggestion" (click)="envoyer(s)">{{ s }}</button>
                 }
               </div>
+              @if (prompts().length) {
+                <p class="titre-prompts">Mes prompts</p>
+                <div class="suggestions">
+                  @for (p of prompts(); track p.id) {
+                    <button type="button" class="suggestion perso" (click)="inserer(p)" [title]="p.contenu">{{ p.titre }}</button>
+                  }
+                </div>
+              }
             </div>
           }
           @for (m of messages(); track $index) {
             <div class="message" [class.moi]="m.role === 'utilisateur'">
               @if (m.role === 'assistant') { <span class="avatar-ia">✦</span> }
-              <div class="bulle">
+              <div class="bulle" [class.resume]="m.compacte">
+                @if (m.compacte) { <div class="etiquette-resume">📌 Résumé de la conversation précédente</div> }
                 @if (m.role === 'assistant' && m.enCours && !m.contenu) {
                   <div class="ecrit"><i></i><i></i><i></i></div>
                 } @else if (m.role === 'assistant') {
@@ -71,6 +105,27 @@ interface Bulle extends MessageChat {
           }
           @if (erreur()) {
             <div class="erreur" role="alert">{{ erreur() }} <button class="btn petit" type="button" (click)="reessayer()">Réessayer</button></div>
+          }
+        </div>
+
+        <div class="contexte" [class.alerte]="pourcentageContexte() >= 70" [class.critique]="pourcentageContexte() >= 90"
+             role="group" aria-label="Contexte de la conversation">
+          <div class="ctx-ligne">
+            <span>Contexte utilisé · ≈ {{ tokens() | number }} / {{ contexteMax() | number }} tokens</span>
+            <span class="ctx-droite">
+              <b>{{ pourcentageContexte() }} %</b>
+              <button class="btn petit" type="button" (click)="compacter()" [disabled]="messages().length < 2 || attente() || compactage()"
+                      [class.primaire]="pourcentageContexte() >= 70 && messages().length >= 2"
+                      title="Résume la conversation pour libérer du contexte">
+                <app-icone nom="relancer" [taille]="13" />{{ compactage() ? 'Compactage…' : 'Compacter' }}
+              </button>
+            </span>
+          </div>
+          <div class="ctx-barre" role="progressbar" [attr.aria-valuenow]="pourcentageContexte()" aria-valuemin="0" aria-valuemax="100">
+            <span [style.width.%]="pourcentageContexte() > 100 ? 100 : pourcentageContexte()"></span>
+          </div>
+          @if (pourcentageContexte() >= 70) {
+            <div class="ctx-conseil">{{ pourcentageContexte() >= 100 ? 'Contexte plein : les plus anciens messages ne sont plus envoyés.' : 'La conversation devient longue.' }} Compactez-la pour garder le fil.</div>
           }
         </div>
 
@@ -118,6 +173,29 @@ interface Bulle extends MessageChat {
       font: 13px var(--police); color: var(--texte); cursor: pointer;
     }
     .suggestion:hover { border-color: var(--primaire); background: var(--primaire-pale); }
+    .contexte { padding: 8px 16px 0; display: flex; flex-direction: column; gap: 5px; border-top: 1px solid var(--bord); }
+    .ctx-ligne { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 11.5px; color: var(--texte-2); }
+    .ctx-droite { display: inline-flex; align-items: center; gap: 10px; }
+    .ctx-ligne b { color: var(--texte); }
+    .ctx-barre { height: 6px; border-radius: 999px; background: var(--bord); overflow: hidden; }
+    .ctx-barre span { display: block; height: 100%; border-radius: 999px; background: var(--ok); transition: width .3s, background .3s; }
+    .contexte.alerte .ctx-barre span { background: var(--majeure); }
+    .contexte.critique .ctx-barre span { background: var(--critique); }
+    .contexte.critique .ctx-ligne b { color: var(--critique); }
+    .ctx-conseil { font-size: 11.5px; color: var(--majeure); }
+    .contexte.critique .ctx-conseil { color: var(--critique); }
+    .bulle.resume { border-style: dashed; border-color: var(--primaire); background: var(--primaire-pale); }
+    .etiquette-resume { font-size: 11px; font-weight: 700; color: var(--primaire-fonce); margin-bottom: 6px; }
+    .titre-prompts { margin: 18px 0 8px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--texte-3); }
+    .suggestion.perso { border-style: dashed; }
+    .menu-prompts { position: relative; }
+    .liste-prompts { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; width: 340px; max-height: 360px; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+    .entree { all: unset; cursor: pointer; display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 8px; font: 13px var(--police); }
+    .entree:hover, .entree:focus-visible { background: var(--primaire-pale); }
+    .entree span { color: var(--texte-2); font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .officiel { font-style: normal; font-size: 10.5px; padding: 1px 6px; border-radius: 999px; background: var(--primaire-pale); color: var(--primaire-fonce); margin-left: 4px; }
+    .vide { margin: 0; padding: 8px 10px; color: var(--texte-2); font-size: 13px; }
+    .gerer { padding: 8px 10px; font-size: 12.5px; border-top: 1px solid var(--bord); margin-top: 4px; }
     .message { display: flex; gap: 10px; align-items: flex-start; }
     .message.moi { justify-content: flex-end; }
     .avatar-ia {
@@ -133,7 +211,7 @@ interface Bulle extends MessageChat {
     .ecrit i:nth-child(2) { animation-delay: .15s; } .ecrit i:nth-child(3) { animation-delay: .3s; }
     @keyframes rebond { 0%, 80%, 100% { opacity: .3; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-4px); } }
     .erreur { background: var(--critique-pale); color: var(--critique); border-radius: 10px; padding: 10px 12px; font-size: 13px; display: flex; gap: 10px; align-items: center; justify-content: space-between; }
-    .saisie { display: flex; gap: 10px; padding: 14px 16px 6px; border-top: 1px solid var(--bord); }
+    .saisie { display: flex; gap: 10px; padding: 10px 16px 6px; }
     .saisie textarea { flex: 1; resize: none; font-family: var(--police); font-size: 14px; }
     .envoyer { height: auto; width: 46px; padding: 0; }
     .confiance { margin: 0; padding: 0 16px 12px; font-size: 11.5px; color: var(--texte-3); display: flex; gap: 6px; align-items: center; }
@@ -150,6 +228,11 @@ interface Bulle extends MessageChat {
   `],
 })
 export class AssistantComponent implements OnInit, AfterViewChecked {
+  private readonly api = inject(ApiService);
+  private readonly auth = inject(AuthService);
+  private readonly notif = inject(NotifService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly flux = inject(FluxIaService);
   private readonly transfert = inject(TransfertCodeService);
   private readonly fil = viewChild<ElementRef<HTMLElement>>('fil');
@@ -163,9 +246,41 @@ export class AssistantComponent implements OnInit, AfterViewChecked {
   readonly codeOuvert = signal(false);
   readonly code = signal('');
   readonly langage = signal('auto');
+  readonly prompts = signal<PromptUtilisateur[]>([]);
+  readonly menuPrompts = signal(false);
+  readonly compactage = signal(false);
+  readonly contexteMax = signal(12000);
+  readonly tokens = computed(() => {
+    const historique = this.messages().reduce((n, m) => n + estimerTokens(m.contenu), 0);
+    const joint = this.codeOuvert() ? estimerTokens(this.code()) : 0;
+    return historique + joint + estimerTokens(this.question());
+  });
+  readonly pourcentageContexte = computed(() => Math.round((this.tokens() / this.contexteMax()) * 100));
   private defiler = false;
 
+  /** Place un prompt enregistré dans la zone de saisie (à la suite du texte déjà écrit) ; l'utilisateur peut le compléter avant d'envoyer. */
+  inserer(p: PromptUtilisateur): void {
+    const actuel = this.question().trim();
+    this.question.set(actuel ? `${actuel}\n${p.contenu}` : p.contenu);
+    this.menuPrompts.set(false);
+  }
+
   ngOnInit(): void {
+    this.api.systeme().subscribe({ next: (s) => this.contexteMax.set(s.contexteMaxTokens || 12000), error: () => undefined });
+    this.api.mesPrompts().subscribe({
+      next: (ps) => {
+        this.prompts.set(ps);
+        const voulu = Number(this.route.snapshot.queryParamMap.get('prompt'));
+        const trouve = voulu ? ps.find((p) => p.id === voulu) : undefined;
+        if (trouve) {
+          this.inserer(trouve);
+        }
+        if (voulu) {
+          this.router.navigate([], { queryParams: {}, replaceUrl: true });
+        }
+      },
+      error: () => this.prompts.set([]),
+    });
     try {
       const sauve = sessionStorage.getItem(CLE);
       if (sauve) {
@@ -209,6 +324,32 @@ export class AssistantComponent implements OnInit, AfterViewChecked {
     this.demander();
   }
 
+  /** Remplace toute la conversation par un résumé rédigé par l'IA (libère du contexte, garde le fil). */
+  compacter(): void {
+    const historique = this.messages();
+    if (historique.length < 2 || this.attente() || this.compactage()) {
+      return;
+    }
+    const avant = this.tokens();
+    this.compactage.set(true);
+    this.api.compacter(historique.map(({ role, contenu }) => ({ role, contenu }))).subscribe({
+      next: (r) => {
+        const resume = r.contenu.trim();
+        this.messages.set([{ role: 'assistant', contenu: resume, compacte: true, meta: `Compactée · ${historique.length} messages → 1 résumé` }]);
+        this.sauver();
+        this.compactage.set(false);
+        this.defiler = true;
+        this.auth.rafraichir().subscribe({ error: () => undefined });
+        const gagne = Math.max(0, avant - this.tokens());
+        this.notif.succes(`Conversation compactée : environ ${gagne} tokens libérés.`);
+      },
+      error: (e) => {
+        this.compactage.set(false);
+        this.notif.erreur(messageErreur(e));
+      },
+    });
+  }
+
   reessayer(): void {
     this.demander();
   }
@@ -238,6 +379,7 @@ export class AssistantComponent implements OnInit, AfterViewChecked {
         }));
         this.attente.set(false);
         this.sauver();
+        this.auth.rafraichir().subscribe({ error: () => undefined });
       } else {
         // Réponse incomplète : on la retire pour pouvoir réessayer proprement
         this.messages.update((m) => m.slice(0, -1));

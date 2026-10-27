@@ -42,6 +42,9 @@ public abstract class Utilisateur {
     @Column(nullable = false)
     private boolean bloque;
 
+    @Column(name = "derniere_connexion")
+    private LocalDateTime derniereConnexion;
+
     protected Utilisateur() {
     }
 
@@ -57,6 +60,19 @@ public abstract class Utilisateur {
     /** Met à jour le profil (seul le nom est modifiable ; l'e-mail sert d'identifiant). */
     public void modifierProfil(String nouveauNom) {
         this.nom = nouveauNom;
+    }
+
+    /** Changement d'identifiant par un administrateur (l'unicité est vérifiée par le service). */
+    public void modifierEmail(String nouvelEmail) {
+        this.email = nouvelEmail;
+    }
+
+    public void enregistrerConnexion() {
+        this.derniereConnexion = LocalDateTime.now();
+    }
+
+    public LocalDateTime getDerniereConnexion() {
+        return derniereConnexion;
     }
 
     public Long getId() {

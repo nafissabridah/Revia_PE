@@ -6,7 +6,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.revia.ai.AnalyseurIA;
+import com.revia.ai.AssistantIA;
 import com.revia.config.ReviaProperties;
+import com.revia.service.ParametreService;
 import com.revia.web.dto.Dtos;
 
 /** Informations publiques non sensibles (jamais la clé d'API). */
@@ -16,12 +18,14 @@ public class SystemeController {
 
     private final AnalyseurIA analyseur;
     private final ReviaProperties props;
+    private final ParametreService parametres;
     private final String version;
 
-    public SystemeController(AnalyseurIA analyseur, ReviaProperties props,
+    public SystemeController(AnalyseurIA analyseur, ReviaProperties props, ParametreService parametres,
                              @Value("${revia.version:1.0.0}") String version) {
         this.analyseur = analyseur;
         this.props = props;
+        this.parametres = parametres;
         this.version = version;
     }
 
@@ -29,6 +33,7 @@ public class SystemeController {
     public Dtos.SystemeInfo info() {
         return new Dtos.SystemeInfo("RevIA", version, analyseur.getFournisseur(), analyseur.getModele(),
                 analyseur.isDisponible(), analyseur.getTemperature(), analyseur.getTimeoutSec(),
-                props.quotas().revuesParJour(), props.ai().maxLines());
+                parametres.quotaRevuesDefaut(), parametres.quotaAssistantDefaut(), props.ai().maxLines(),
+                props.quotas().analysesParMinute(), props.quotas().connexionsParMinute(), AssistantIA.CONTEXTE_MAX_TOKENS);
     }
 }

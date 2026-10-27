@@ -39,6 +39,7 @@ public record ReviaProperties(
 
     public record Quotas(
             @DefaultValue("50") int revuesParJour,
+            @DefaultValue("100") int assistantParJour,
             @DefaultValue("10") int analysesParMinute,
             @DefaultValue("10") int connexionsParMinute) {
     }

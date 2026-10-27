@@ -32,6 +32,8 @@ public class AssistantIA {
     /** Au-delà, la réponse (tests, code documenté…) risque d'être tronquée par le modèle. */
     public static final int MAX_LIGNES = 500;
     public static final int MAX_MESSAGES = 20;
+    /** Budget de contexte affiché à l'utilisateur (barre « contexte utilisé » de l'Assistant IA), en tokens estimés. */
+    public static final int CONTEXTE_MAX_TOKENS = 12_000;
 
     static final String CONSIGNES_COMMUNES = """
             Tu es RevIA, un assistant de développement logiciel pour des étudiants et des développeurs.
@@ -111,6 +113,14 @@ public class AssistantIA {
                     .orElseThrow(() -> new ApiException(ErrorCode.INTROUVABLE, "Outil IA inconnu : " + id));
         }
     }
+
+    static final String CONSIGNE_COMPACTAGE = """
+            Outil : compactage de la conversation.
+            Résume la conversation ci-dessous pour pouvoir la poursuivre sans perdre le fil.
+            Garde : l'objectif de l'utilisateur, les décisions prises, les erreurs rencontrées, les questions encore ouvertes
+            et les extraits de code importants (en blocs ```). Supprime les politesses et les répétitions.
+            Écris en Markdown, à la troisième personne, en 250 mots maximum (hors code).
+            """;
 
     static final String CONSIGNE_CHAT = """
             Outil : assistant (chat).
@@ -228,6 +238,23 @@ public class AssistantIA {
         }
         message.append("Réponds au dernier message de l'utilisateur.");
         return new Demande(CONSIGNES_COMMUNES + "\n" + CONSIGNE_CHAT, message.toString(), lang, masquages, debut);
+    }
+
+    /** Demande de résumé de toute la conversation (au moins deux messages) : le front remplace ensuite l'historique par ce résumé. */
+    public Demande preparerCompactage(List<Message> messages) {
+        verifierDisponible();
+        if (messages == null || messages.size() < 2) {
+            throw new ApiException(ErrorCode.VALIDATION, "Il faut au moins deux messages pour compacter la conversation.");
+        }
+        long debut = System.currentTimeMillis();
+        int masquages = 0;
+        StringBuilder message = new StringBuilder("Conversation à résumer :\n");
+        for (Message msg : messages) {
+            MasqueurDonnees.Resultat m = masqueur.masquer(msg.contenu());
+            masquages += m.nbMasquages();
+            message.append("assistant".equals(msg.role()) ? "Assistant : " : "Utilisateur : ").append(m.code().trim()).append("\n\n");
+        }
+        return new Demande(CONSIGNES_COMMUNES + "\n" + CONSIGNE_COMPACTAGE, message.toString(), null, masquages, debut);
     }
 
     private void verifierDisponible() {

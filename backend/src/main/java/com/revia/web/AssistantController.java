@@ -6,6 +6,7 @@ import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -16,6 +17,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import com.revia.ai.AssistantIA;
 import com.revia.error.ApiException;
 import com.revia.error.ErrorCode;
+import com.revia.security.UtilisateurConnecte;
+import com.revia.service.QuotaService;
 import com.revia.web.dto.Dtos;
 
 import jakarta.validation.Valid;
@@ -33,31 +36,52 @@ public class AssistantController {
     private static final Logger log = LoggerFactory.getLogger(AssistantController.class);
 
     private final AssistantIA assistant;
+    private final QuotaService quotas;
 
-    public AssistantController(AssistantIA assistant) {
+    public AssistantController(AssistantIA assistant, QuotaService quotas) {
         this.assistant = assistant;
+        this.quotas = quotas;
     }
 
     @PostMapping("/chat")
-    public Dtos.AssistantReponse discuter(@Valid @RequestBody Dtos.ChatRequest req) {
-        return dto(assistant.repondre(chat(req)), "chat");
+    public Dtos.AssistantReponse discuter(@AuthenticationPrincipal UtilisateurConnecte u, @Valid @RequestBody Dtos.ChatRequest req) {
+        AssistantIA.Demande d = chat(req);
+        quotas.consommerAssistant(u.id(), "chat");
+        return dto(assistant.repondre(d), "chat");
+    }
+
+    /** Résume la conversation pour libérer du contexte ; compte comme une requête assistant. */
+    @PostMapping("/compacter")
+    public Dtos.AssistantReponse compacter(@AuthenticationPrincipal UtilisateurConnecte u, @Valid @RequestBody Dtos.CompactageRequest req) {
+        AssistantIA.Demande d = assistant.preparerCompactage(
+                req.messages().stream().map(m -> new AssistantIA.Message(m.role(), m.contenu())).toList());
+        quotas.consommerAssistant(u.id(), "compactage");
+        return dto(assistant.repondre(d), "compactage");
     }
 
     @PostMapping("/outils/{outil}")
-    public Dtos.AssistantReponse outil(@PathVariable String outil, @Valid @RequestBody Dtos.OutilRequest req) {
+    public Dtos.AssistantReponse outil(@AuthenticationPrincipal UtilisateurConnecte u, @PathVariable String outil,
+                                       @Valid @RequestBody Dtos.OutilRequest req) {
         AssistantIA.Outil o = AssistantIA.Outil.depuis(outil);
-        return dto(assistant.repondre(assistant.preparerOutil(o, req.code(), req.langage(), req.cible())), o.id());
+        AssistantIA.Demande d = assistant.preparerOutil(o, req.code(), req.langage(), req.cible());
+        quotas.consommerAssistant(u.id(), o.id());
+        return dto(assistant.repondre(d), o.id());
     }
 
     @PostMapping(value = "/chat/flux", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter discuterEnDirect(@Valid @RequestBody Dtos.ChatRequest req) {
-        return diffuser(chat(req), "chat");
+    public SseEmitter discuterEnDirect(@AuthenticationPrincipal UtilisateurConnecte u, @Valid @RequestBody Dtos.ChatRequest req) {
+        AssistantIA.Demande d = chat(req);
+        quotas.consommerAssistant(u.id(), "chat");
+        return diffuser(d, "chat");
     }
 
     @PostMapping(value = "/outils/{outil}/flux", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter outilEnDirect(@PathVariable String outil, @Valid @RequestBody Dtos.OutilRequest req) {
+    public SseEmitter outilEnDirect(@AuthenticationPrincipal UtilisateurConnecte u, @PathVariable String outil,
+                                    @Valid @RequestBody Dtos.OutilRequest req) {
         AssistantIA.Outil o = AssistantIA.Outil.depuis(outil);
-        return diffuser(assistant.preparerOutil(o, req.code(), req.langage(), req.cible()), o.id());
+        AssistantIA.Demande d = assistant.preparerOutil(o, req.code(), req.langage(), req.cible());
+        quotas.consommerAssistant(u.id(), o.id());
+        return diffuser(d, o.id());
     }
 
     private AssistantIA.Demande chat(Dtos.ChatRequest req) {
